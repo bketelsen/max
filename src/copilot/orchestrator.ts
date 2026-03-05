@@ -244,7 +244,17 @@ async function executeOnSession(prompt: string, callback: MessageCallback): Prom
   currentCallback = callback;
 
   let accumulated = "";
+  let toolCallExecuted = false;
+  const unsubToolDone = session.on("tool.execution_complete", () => {
+    toolCallExecuted = true;
+  });
   const unsubDelta = session.on("assistant.message_delta", (event) => {
+    // After a tool call completes, ensure a line break separates the text blocks
+    // so they don't visually run together in the TUI.
+    if (toolCallExecuted && accumulated.length > 0 && !accumulated.endsWith("\n")) {
+      accumulated += "\n";
+    }
+    toolCallExecuted = false;
     accumulated += event.data.deltaContent;
     callback(accumulated, false);
   });
@@ -264,6 +274,7 @@ async function executeOnSession(prompt: string, callback: MessageCallback): Prom
     throw err;
   } finally {
     unsubDelta();
+    unsubToolDone();
     currentCallback = undefined;
   }
 }
