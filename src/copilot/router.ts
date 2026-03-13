@@ -1,4 +1,6 @@
 import { getState, setState } from "../store/db.js";
+import { classifyWithLLM } from "./classifier.js";
+import type { CopilotClient } from "@github/copilot-sdk";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -201,7 +203,8 @@ export function updateRouterConfig(partial: Partial<RouterConfig>): RouterConfig
 // Tier classification
 // ---------------------------------------------------------------------------
 
-export function classifyMessage(
+/** Heuristic-based fallback classifier (no LLM call). */
+export function classifyMessageHeuristic(
   prompt: string,
   recentTiers?: Tier[],
 ): { tier: Tier; confidence: number } {
@@ -273,6 +276,44 @@ export function classifyMessage(
   return { tier: best.tier, confidence: Math.round(confidence * 100) / 100 };
 }
 
+/**
+ * Classify a message — uses GPT-4.1 LLM classifier when a client is available,
+ * falls back to heuristics if the LLM call fails or no client is provided.
+ */
+export async function classifyMessage(
+  prompt: string,
+  recentTiers?: Tier[],
+  client?: CopilotClient,
+): Promise<{ tier: Tier; confidence: number }> {
+  const text = sanitize(prompt);
+  const lower = text.toLowerCase();
+
+  // Background tasks and follow-ups are handled deterministically — skip LLM
+  if (lower.startsWith("[background task completed]")) {
+    return { tier: "standard", confidence: 1.0 };
+  }
+  if (text.length < 20 && recentTiers && recentTiers.length > 0) {
+    const isFollowUp = FOLLOW_UP_PATTERNS.some((p) => lower === p || lower === p + ".");
+    if (isFollowUp) {
+      return { tier: recentTiers[0], confidence: 0.85 };
+    }
+  }
+
+  // Try LLM classification
+  if (client) {
+    const llmTier = await classifyWithLLM(client, text);
+    if (llmTier) {
+      console.log(`[max] Classifier (LLM): ${llmTier}`);
+      return { tier: llmTier, confidence: 0.9 };
+    }
+  }
+
+  // Fallback to heuristics
+  const result = classifyMessageHeuristic(prompt, recentTiers);
+  console.log(`[max] Classifier (heuristic fallback): ${result.tier}`);
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Override evaluation
 // ---------------------------------------------------------------------------
@@ -294,11 +335,12 @@ function evaluateOverrides(
 // Main entry point
 // ---------------------------------------------------------------------------
 
-export function resolveModel(
+export async function resolveModel(
   prompt: string,
   currentModel: string,
   recentTiers?: Tier[],
-): RouteResult {
+  client?: CopilotClient,
+): Promise<RouteResult> {
   const config = getRouterConfig();
 
   // Router disabled → manual mode
@@ -330,7 +372,7 @@ export function resolveModel(
   }
 
   // 2. Classify the message
-  const { tier } = classifyMessage(prompt, recentTiers);
+  const { tier } = await classifyMessage(prompt, recentTiers, client);
   const targetModel = config.tierModels[tier];
   const wouldSwitch = targetModel !== currentModel;
 

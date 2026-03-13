@@ -321,7 +321,7 @@ async function processQueue(): Promise<void> {
     currentSourceChannel = item.sourceChannel;
     try {
       // Route the model before executing
-      const routeResult = resolveModel(item.prompt, currentSessionModel || config.copilotModel, recentTiers);
+      const routeResult = await resolveModel(item.prompt, currentSessionModel || config.copilotModel, recentTiers, copilotClient);
       if (routeResult.switched) {
         console.log(`[max] Router: switching to ${routeResult.model} (${routeResult.overrideName || routeResult.tier})`);
         config.copilotModel = routeResult.model;
