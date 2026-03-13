@@ -450,13 +450,11 @@ function connectSSE(): void {
                 isStreaming = false;
                 lastResponse = streamedContent;
                 streamedContent = "";
-                if (event.route) {
+                if (event.route && event.route.routerMode === "auto") {
                   const r = event.route;
-                  const label = r.routerMode === "auto"
-                    ? (r.overrideName
-                      ? `⚡ auto · ${r.model} (${r.overrideName})`
-                      : `⚡ auto · ${r.model}`)
-                    : r.model;
+                  const label = r.overrideName
+                    ? `⚡ auto · ${r.model} (${r.overrideName})`
+                    : `⚡ auto · ${r.model}`;
                   process.stdout.write(`\n${LABEL_PAD}${C.dim(label)}`);
                 }
                 process.stdout.write("\n\n\n");
