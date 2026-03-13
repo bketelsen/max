@@ -13,10 +13,6 @@ const configSchema = z.object({
   API_PORT: z.string().optional(),
   COPILOT_MODEL: z.string().optional(),
   WORKER_TIMEOUT: z.string().optional(),
-  ROUTER_ENABLED: z.string().optional(),
-  ROUTER_FAST_MODEL: z.string().optional(),
-  ROUTER_STANDARD_MODEL: z.string().optional(),
-  ROUTER_PREMIUM_MODEL: z.string().optional(),
 });
 
 const raw = configSchema.parse(process.env);
@@ -45,10 +41,6 @@ if (!Number.isInteger(parsedWorkerTimeout) || parsedWorkerTimeout <= 0) {
 export const DEFAULT_MODEL = "claude-sonnet-4.6";
 
 let _copilotModel = raw.COPILOT_MODEL || DEFAULT_MODEL;
-let _routerEnabled = raw.ROUTER_ENABLED !== undefined ? raw.ROUTER_ENABLED === "true" : true;
-let _routerFastModel = raw.ROUTER_FAST_MODEL || "gpt-4.1";
-let _routerStandardModel = raw.ROUTER_STANDARD_MODEL || "claude-sonnet-4.6";
-let _routerPremiumModel = raw.ROUTER_PREMIUM_MODEL || "claude-opus-4.6";
 
 export const config = {
   telegramBotToken: raw.TELEGRAM_BOT_TOKEN,
@@ -63,30 +55,6 @@ export const config = {
   },
   get telegramEnabled(): boolean {
     return !!this.telegramBotToken && this.authorizedUserId !== undefined;
-  },
-  get routerEnabled(): boolean {
-    return _routerEnabled;
-  },
-  set routerEnabled(enabled: boolean) {
-    _routerEnabled = enabled;
-  },
-  get routerFastModel(): string {
-    return _routerFastModel;
-  },
-  set routerFastModel(model: string) {
-    _routerFastModel = model;
-  },
-  get routerStandardModel(): string {
-    return _routerStandardModel;
-  },
-  set routerStandardModel(model: string) {
-    _routerStandardModel = model;
-  },
-  get routerPremiumModel(): string {
-    return _routerPremiumModel;
-  },
-  set routerPremiumModel(model: string) {
-    _routerPremiumModel = model;
   },
   get selfEditEnabled(): boolean {
     return process.env.MAX_SELF_EDIT === "1";
@@ -118,12 +86,4 @@ function persistEnvVar(key: string, value: string): void {
 /** Persist the current model choice to ~/.max/.env */
 export function persistModel(model: string): void {
   persistEnvVar("COPILOT_MODEL", model);
-}
-
-/** Persist all router-related config to ~/.max/.env */
-export function persistRouterConfig(): void {
-  persistEnvVar("ROUTER_ENABLED", String(config.routerEnabled));
-  persistEnvVar("ROUTER_FAST_MODEL", config.routerFastModel);
-  persistEnvVar("ROUTER_STANDARD_MODEL", config.routerStandardModel);
-  persistEnvVar("ROUTER_PREMIUM_MODEL", config.routerPremiumModel);
 }

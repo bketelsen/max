@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, statSync } from "fs";
 import { join, sep, resolve } from "path";
 import { homedir } from "os";
 import { listSkills, createSkill, removeSkill } from "./skills.js";
-import { config, persistModel, persistRouterConfig } from "../config.js";
+import { config, persistModel } from "../config.js";
 import { SESSIONS_DIR } from "../paths.js";
 import { getCurrentSourceChannel } from "./orchestrator.js";
 import { getRouterConfig, updateRouterConfig } from "./router.js";
@@ -445,8 +445,6 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
           // Disable router when manually switching — user has explicit preference
           if (getRouterConfig().enabled) {
             updateRouterConfig({ enabled: false });
-            config.routerEnabled = false;
-            persistRouterConfig();
             return `Switched model from '${previous}' to '${args.model_id}'. Auto-routing disabled (use toggle_router to re-enable). Takes effect on next message.`;
           }
 
@@ -468,8 +466,6 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
       }),
       handler: async (args) => {
         const updated = updateRouterConfig({ enabled: args.enabled });
-        config.routerEnabled = args.enabled;
-        persistRouterConfig();
         if (args.enabled) {
           const tiers = updated.tierModels;
           return `Auto-routing enabled. Tier models:\n• fast: ${tiers.fast}\n• standard: ${tiers.standard}\n• premium: ${tiers.premium}\n\nMax will automatically pick the best model for each message.`;

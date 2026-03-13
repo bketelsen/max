@@ -57,58 +57,13 @@ const DEFAULT_CONFIG: RouterConfig = {
 // Module-level state
 // ---------------------------------------------------------------------------
 
-let lastTier: Tier | null = null;
 let messagesSinceSwitch = 0;
 
-// ---------------------------------------------------------------------------
-// Keyword lists for tier classification
-// ---------------------------------------------------------------------------
-
-const GREETING_PATTERNS = [
-  "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
-  "what's up", "whats up", "sup", "howdy", "yo",
-];
-
-const THANKS_PATTERNS = [
-  "thanks", "thank you", "thx", "ty",
-];
-
-const ACK_PATTERNS = [
-  "ok", "okay", "got it", "sure", "cool", "nice", "great", "sounds good",
-  "right", "alright", "yep", "yup", "nope", "nah",
-];
-
+// Short replies that should inherit the previous turn's tier
 const FOLLOW_UP_PATTERNS = [
   "yes", "no", "do it", "go ahead", "sure", "sounds good", "looks good",
   "perfect", "+1", "please", "yep", "yup", "nope", "nah", "ok", "okay",
   "got it", "cool", "nice", "great", "alright", "right",
-];
-
-const STANDARD_TOOL_KEYWORDS = [
-  "remember", "recall", "forget", "memory", "worker", "session", "skill",
-  "model", "status", "check", "list", "create", "kill", "send",
-];
-
-const STANDARD_CODE_KEYWORDS = [
-  "code", "file", "directory", "function", "variable", "class", "module",
-  "import", "export", "compile", "build", "test", "deploy", "git",
-  "commit", "branch", "merge", "pull", "push", "npm", "node", "python",
-  "javascript", "typescript", "react", "api", "endpoint", "server",
-  "database", "query", "bug", "error", "fix", "implement", "feature",
-];
-
-const STANDARD_COMMAND_PATTERNS = [
-  "go ahead", "do it", "start", "run", "execute", "proceed",
-];
-
-const PREMIUM_KEYWORDS = [
-  "architect", "analyze", "compare", "evaluate", "trade-off", "tradeoff",
-  "pros and cons", "deep dive", "explain in detail", "complex", "strategy",
-  "optimize", "refactor entire", "review", "plan",
-];
-
-const PREMIUM_DEBUG_KEYWORDS = [
-  "debug", "investigate", "root cause", "why is",
 ];
 
 // ---------------------------------------------------------------------------
@@ -129,59 +84,20 @@ function wordMatch(text: string, keyword: string): boolean {
   return new RegExp(`\\b${escaped}\\b`, "i").test(text);
 }
 
-/** Check if any keyword in the list matches (word-boundary, case-insensitive). */
-function anyWordMatch(text: string, keywords: string[]): boolean {
-  return keywords.some((kw) => wordMatch(text, kw));
-}
-
-/** Count question marks in a string. */
-function countQuestionMarks(text: string): number {
-  return (text.match(/\?/g) || []).length;
-}
-
-/** Check for numbered items like "1.", "2.", etc. */
-function hasNumberedItems(text: string): boolean {
-  const matches = text.match(/^\s*\d+[.)]\s/gm);
-  return !!matches && matches.length >= 2;
-}
-
 // ---------------------------------------------------------------------------
 // Config management
 // ---------------------------------------------------------------------------
 
 export function getRouterConfig(): RouterConfig {
-  let config: RouterConfig;
-
   const stored = getState("router_config");
   if (stored) {
     try {
-      config = { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
+      return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
     } catch {
-      config = { ...DEFAULT_CONFIG };
-    }
-  } else {
-    config = { ...DEFAULT_CONFIG };
-  }
-
-  // Environment variable overrides
-  const envEnabled = process.env.ROUTER_ENABLED;
-  if (envEnabled !== undefined) {
-    config.enabled = envEnabled.toLowerCase() === "true";
-  }
-
-  const tierEnvMap: Record<Tier, string> = {
-    fast: "ROUTER_FAST_MODEL",
-    standard: "ROUTER_STANDARD_MODEL",
-    premium: "ROUTER_PREMIUM_MODEL",
-  };
-  for (const [tier, envKey] of Object.entries(tierEnvMap)) {
-    const val = process.env[envKey];
-    if (val) {
-      config.tierModels[tier as Tier] = val;
+      return { ...DEFAULT_CONFIG };
     }
   }
-
-  return config;
+  return { ...DEFAULT_CONFIG };
 }
 
 export function updateRouterConfig(partial: Partial<RouterConfig>): RouterConfig {
@@ -200,135 +116,42 @@ export function updateRouterConfig(partial: Partial<RouterConfig>): RouterConfig
 }
 
 // ---------------------------------------------------------------------------
-// Tier classification
+// Classification
 // ---------------------------------------------------------------------------
-
-/** Heuristic-based fallback classifier (no LLM call). */
-export function classifyMessageHeuristic(
-  prompt: string,
-  recentTiers?: Tier[],
-): { tier: Tier; confidence: number } {
-  const text = sanitize(prompt);
-  const lower = text.toLowerCase();
-  const len = text.length;
-
-  // Background tasks → always standard
-  if (lower.startsWith("[background task completed]")) {
-    return { tier: "standard", confidence: 1.0 };
-  }
-
-  // Follow-up detection: very short replies inherit last tier
-  if (len < 20 && recentTiers && recentTiers.length > 0) {
-    const isFollowUp = FOLLOW_UP_PATTERNS.some((p) => lower === p || lower === p + ".");
-    if (isFollowUp) {
-      return { tier: recentTiers[0], confidence: 0.85 };
-    }
-  }
-
-  // Score each tier
-  let fastScore = 0;
-  let standardScore = 0;
-  let premiumScore = 0;
-
-  // --- FAST signals ---
-  if (len < 40) {
-    if (anyWordMatch(lower, GREETING_PATTERNS)) fastScore += 0.9;
-    if (anyWordMatch(lower, THANKS_PATTERNS)) fastScore += 0.9;
-    if (anyWordMatch(lower, ACK_PATTERNS)) fastScore += 0.8;
-    // Short message with no code/tech terms gets a base fast bump
-    if (!anyWordMatch(lower, STANDARD_CODE_KEYWORDS) && !anyWordMatch(lower, STANDARD_TOOL_KEYWORDS)) {
-      fastScore += 0.2;
-    }
-  }
-
-  // --- STANDARD signals ---
-  if (anyWordMatch(lower, STANDARD_CODE_KEYWORDS)) standardScore += 0.6;
-  if (anyWordMatch(lower, STANDARD_TOOL_KEYWORDS)) standardScore += 0.5;
-  if (anyWordMatch(lower, STANDARD_COMMAND_PATTERNS)) standardScore += 0.3;
-  if (len >= 60 && len <= 400) standardScore += 0.3;
-  // Standard is the default — give it a small baseline
-  standardScore += 0.1;
-
-  // --- PREMIUM signals ---
-  if (anyWordMatch(lower, PREMIUM_KEYWORDS)) premiumScore += 0.7;
-  if (len > 400) premiumScore += 0.5;
-  // Multi-part questions
-  const qCount = countQuestionMarks(text);
-  if (qCount >= 2) premiumScore += 0.3;
-  if (hasNumberedItems(text)) premiumScore += 0.3;
-  // Debug + long context
-  if (anyWordMatch(lower, PREMIUM_DEBUG_KEYWORDS) && len > 150) premiumScore += 0.5;
-
-  // Pick the winning tier
-  const scores: { tier: Tier; score: number }[] = [
-    { tier: "fast", score: fastScore },
-    { tier: "standard", score: standardScore },
-    { tier: "premium", score: premiumScore },
-  ];
-
-  scores.sort((a, b) => b.score - a.score);
-  const best = scores[0];
-  const runnerUp = scores[1];
-
-  // Confidence is the gap between best and runner-up, clamped to [0, 1]
-  const confidence = Math.min(1.0, Math.max(0, best.score - runnerUp.score + 0.5));
-
-  return { tier: best.tier, confidence: Math.round(confidence * 100) / 100 };
-}
 
 /**
- * Classify a message — uses GPT-4.1 LLM classifier when a client is available,
- * falls back to heuristics if the LLM call fails or no client is provided.
+ * Classify a message using GPT-4.1. Falls back to "standard" if the LLM
+ * is unavailable. Background tasks and follow-ups are handled deterministically.
  */
-export async function classifyMessage(
+async function classifyMessage(
   prompt: string,
-  recentTiers?: Tier[],
+  recentTiers: Tier[],
   client?: CopilotClient,
-): Promise<{ tier: Tier; confidence: number }> {
+): Promise<Tier> {
   const text = sanitize(prompt);
   const lower = text.toLowerCase();
 
-  // Background tasks and follow-ups are handled deterministically — skip LLM
-  if (lower.startsWith("[background task completed]")) {
-    return { tier: "standard", confidence: 1.0 };
-  }
-  if (text.length < 20 && recentTiers && recentTiers.length > 0) {
+  // Background tasks → always standard
+  if (lower.startsWith("[background task completed]")) return "standard";
+
+  // Short follow-ups inherit the previous tier
+  if (text.length < 20 && recentTiers.length > 0) {
     const isFollowUp = FOLLOW_UP_PATTERNS.some((p) => lower === p || lower === p + ".");
-    if (isFollowUp) {
-      return { tier: recentTiers[0], confidence: 0.85 };
-    }
+    if (isFollowUp) return recentTiers[0];
   }
 
-  // Try LLM classification
+  // LLM classification
   if (client) {
-    const llmTier = await classifyWithLLM(client, text);
-    if (llmTier) {
-      console.log(`[max] Classifier (LLM): ${llmTier}`);
-      return { tier: llmTier, confidence: 0.9 };
+    const tier = await classifyWithLLM(client, text);
+    if (tier) {
+      console.log(`[max] Classifier: ${tier}`);
+      return tier;
     }
   }
 
-  // Fallback to heuristics
-  const result = classifyMessageHeuristic(prompt, recentTiers);
-  console.log(`[max] Classifier (heuristic fallback): ${result.tier}`);
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Override evaluation
-// ---------------------------------------------------------------------------
-
-function evaluateOverrides(
-  text: string,
-  overrides: OverrideRule[],
-): OverrideRule | null {
-  const lower = text.toLowerCase();
-  for (const rule of overrides) {
-    if (anyWordMatch(lower, rule.keywords)) {
-      return rule;
-    }
-  }
-  return null;
+  // Fallback — standard is always safe
+  console.log(`[max] Classifier (fallback): standard`);
+  return "standard";
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +161,7 @@ function evaluateOverrides(
 export async function resolveModel(
   prompt: string,
   currentModel: string,
-  recentTiers?: Tier[],
+  recentTiers: Tier[],
   client?: CopilotClient,
 ): Promise<RouteResult> {
   const config = getRouterConfig();
@@ -346,60 +169,33 @@ export async function resolveModel(
   // Router disabled → manual mode
   if (!config.enabled) {
     messagesSinceSwitch = 0;
-    return {
-      model: currentModel,
-      tier: null,
-      switched: false,
-      routerMode: "manual",
-    };
+    return { model: currentModel, tier: null, switched: false, routerMode: "manual" };
   }
 
   const text = sanitize(prompt);
 
   // 1. Check overrides first — they bypass cooldown
-  const override = evaluateOverrides(text, config.overrides);
-  if (override) {
-    const switched = override.model !== currentModel;
-    if (switched) messagesSinceSwitch = 0;
-    lastTier = null;
-    return {
-      model: override.model,
-      tier: null,
-      overrideName: override.name,
-      switched,
-      routerMode: "auto",
-    };
+  for (const rule of config.overrides) {
+    if (rule.keywords.some((kw) => wordMatch(text, kw))) {
+      const switched = rule.model !== currentModel;
+      if (switched) messagesSinceSwitch = 0;
+      return { model: rule.model, tier: null, overrideName: rule.name, switched, routerMode: "auto" };
+    }
   }
 
   // 2. Classify the message
-  const { tier } = await classifyMessage(prompt, recentTiers, client);
+  const tier = await classifyMessage(prompt, recentTiers, client);
   const targetModel = config.tierModels[tier];
   const wouldSwitch = targetModel !== currentModel;
 
-  // 3. Cooldown logic — prevent rapid switching
+  // 3. Cooldown — prevent rapid switching
   if (wouldSwitch && messagesSinceSwitch < config.cooldownMessages) {
     messagesSinceSwitch++;
-    lastTier = tier;
-    return {
-      model: currentModel,
-      tier,
-      switched: false,
-      routerMode: "auto",
-    };
+    return { model: currentModel, tier, switched: false, routerMode: "auto" };
   }
 
-  // 4. Apply the switch (or keep current)
-  if (wouldSwitch) {
-    messagesSinceSwitch = 0;
-  } else {
-    messagesSinceSwitch++;
-  }
-  lastTier = tier;
+  if (wouldSwitch) messagesSinceSwitch = 0;
+  else messagesSinceSwitch++;
 
-  return {
-    model: targetModel,
-    tier,
-    switched: wouldSwitch,
-    routerMode: "auto",
-  };
+  return { model: targetModel, tier, switched: wouldSwitch, routerMode: "auto" };
 }

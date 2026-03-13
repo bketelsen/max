@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { randomBytes } from "crypto";
 import { sendToOrchestrator, getWorkers, cancelCurrentMessage, getLastRouteResult } from "../copilot/orchestrator.js";
 import { sendPhoto } from "../telegram/bot.js";
-import { config, persistModel, persistRouterConfig } from "../config.js";
+import { config, persistModel } from "../config.js";
 import { getRouterConfig, updateRouterConfig } from "../copilot/router.js";
 import { searchMemories } from "../store/db.js";
 import { listSkills, removeSkill } from "../copilot/skills.js";
@@ -199,15 +199,6 @@ app.post("/router", (req: Request, res: Response) => {
   }>;
 
   const updated = updateRouterConfig(body);
-
-  // Sync config object
-  if (body.enabled !== undefined) config.routerEnabled = body.enabled;
-  if (body.tierModels) {
-    if (body.tierModels.fast) config.routerFastModel = body.tierModels.fast;
-    if (body.tierModels.standard) config.routerStandardModel = body.tierModels.standard;
-    if (body.tierModels.premium) config.routerPremiumModel = body.tierModels.premium;
-  }
-  persistRouterConfig();
 
   res.json(updated);
 });
