@@ -57,7 +57,7 @@ const DEFAULT_CONFIG: RouterConfig = {
 // Module-level state
 // ---------------------------------------------------------------------------
 
-let messagesSinceSwitch = 0;
+let messagesSinceSwitch = Infinity;
 
 // Short replies that should inherit the previous turn's tier
 const FOLLOW_UP_PATTERNS = [
@@ -168,7 +168,7 @@ export async function resolveModel(
 
   // Router disabled → manual mode
   if (!config.enabled) {
-    messagesSinceSwitch = 0;
+    messagesSinceSwitch = Infinity;
     return { model: currentModel, tier: null, switched: false, routerMode: "manual" };
   }
 
