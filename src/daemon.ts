@@ -7,7 +7,7 @@ import { config } from "./config.js";
 import { spawn } from "child_process";
 import { checkForUpdate } from "./update.js";
 import { ensureWikiStructure } from "./wiki/fs.js";
-import { shouldMigrate, migrateMemoriesToWiki } from "./wiki/migrate.js";
+import { shouldMigrate, migrateMemoriesToWiki, shouldReorganize, reorganizeWiki } from "./wiki/migrate.js";
 
 function truncate(text: string, max = 200): string {
   const oneLine = text.replace(/\n/g, " ").trim();
@@ -40,6 +40,11 @@ async function main(): Promise<void> {
     console.log("[max] Migrating SQLite memories to wiki...");
     const count = migrateMemoriesToWiki();
     console.log(`[max] Migrated ${count} memories to wiki`);
+  }
+  if (shouldReorganize()) {
+    console.log("[max] Reorganizing wiki pages into entity structure...");
+    const count = reorganizeWiki();
+    console.log(`[max] Created ${count} entity pages`);
   }
 
   // Start Copilot SDK client

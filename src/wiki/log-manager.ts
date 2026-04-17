@@ -7,7 +7,7 @@ import { join } from "path";
 import { WIKI_DIR } from "../paths.js";
 import { ensureWikiStructure } from "./fs.js";
 
-export type LogType = "ingest" | "update" | "lint" | "query" | "migrate" | "delete";
+export type LogType = "ingest" | "update" | "lint" | "query" | "migrate" | "delete" | "reorg";
 
 const LOG_PATH = join(WIKI_DIR, "log.md");
 
