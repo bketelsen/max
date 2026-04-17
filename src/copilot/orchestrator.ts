@@ -293,15 +293,13 @@ async function executeOnSession(
   const session = await ensureOrchestratorSession();
   currentCallback = callback;
 
-  // Inject relevant wiki context into the prompt (skip for background task results)
+  // Inject wiki index context per-message (skip for background task results)
   let enrichedPrompt = prompt;
   if (!prompt.startsWith("[Background task completed]")) {
     try {
-      const wikiContext = getRelevantWikiContext(prompt, 3);
+      const wikiContext = getRelevantWikiContext(prompt);
       if (wikiContext) {
-        // Cap at 1500 chars to balance context richness vs prompt bloat
-        const trimmed = wikiContext.length > 1500 ? wikiContext.slice(0, 1500) + "…" : wikiContext;
-        enrichedPrompt = `[Wiki context:\n${trimmed}\n]\n\n${prompt}`;
+        enrichedPrompt = `[${wikiContext}]\n\n${prompt}`;
       }
     } catch { /* non-fatal */ }
   }
