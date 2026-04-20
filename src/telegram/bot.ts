@@ -192,7 +192,7 @@ export function createBot(): Bot {
       await ctx.reply("No workers running.");
     } else {
       const lines = workers.map((w) => {
-        return `🟢 @${w.slug} — ${w.taskId}: ${w.description}`;
+        return `🟢 @${w.slug} (${w.model}) — ${w.description}`;
       });
       await ctx.reply(lines.join("\n"));
     }

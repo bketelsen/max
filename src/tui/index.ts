@@ -737,7 +737,7 @@ function cmdAgents(): void {
       console.log(C.dim("  No workers running.\n"));
     } else {
       for (const w of workers) {
-        console.log(`  ${C.green("●")}  ${C.bold("@" + w.slug)}  ${C.dim(w.taskId)}  ${C.dim(w.description || "")}`);
+        console.log(`  ${C.green("●")}  ${C.bold("@" + w.slug)}  ${C.dim("(" + w.model + ")")}  ${w.description || ""}`);
       }
       console.log();
     }
