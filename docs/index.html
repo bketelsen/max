@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Max — Your personal AI developer assistant, built on GitHub Copilot</title>
-  <meta name="description" content="Max is a personal AI developer assistant built on the GitHub Copilot SDK. Runs 24/7 on your machine, handles coding while you sleep, learns any skill, and works with your existing Copilot subscription.">
+  <meta name="description" content="Max is a personal AI developer assistant built on the GitHub Copilot SDK. Runs 24/7 on your machine, remembers everything in a personal wiki, handles coding while you sleep, learns any skill, and works with your existing Copilot subscription.">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
 
@@ -927,7 +927,7 @@
         <div class="tui-msg"><span class="tui-who max">max</span><span class="tui-text"><strong>Done.</strong> I can now control your lights. Want me to turn them off?</span></div>
         <div class="tui-divider"></div>
         <div class="tui-msg"><span class="tui-who you">you</span><span class="tui-text">Remember that I deploy myapp to Vercel</span></div>
-        <div class="tui-msg"><span class="tui-who max">max</span><span class="tui-text">Got it — saved to my wiki under Projects. I'll keep that in mind for future deploys.</span></div>
+        <div class="tui-msg"><span class="tui-who max">max</span><span class="tui-text">Filed under <code>projects/myapp.md</code> and cross-linked to <code>[[vercel]]</code>. I'll remember next time you mention deploys.</span></div>
       </div>
       <div class="tui-inputbar">
         <span class="tui-prompt">›</span>
@@ -954,22 +954,22 @@
     <div class="what-item fade-in">
       <span class="what-item-number">02</span>
       <div class="what-item-content">
-        <h3>Codes while you're away</h3>
-        <p><strong>Max spins up real Copilot CLI sessions</strong> as workers. Dispatches tasks, works on your repos, and reports back to your phone. You can be walking your dog and a bug gets fixed.</p>
+        <h3>Remembers like a person</h3>
+        <p><strong>Max keeps a personal wiki that grows with every conversation</strong> — entity pages for the people, projects, and preferences in your life, cross-linked with <code>[[wiki links]]</code>, tagged, and dated. A relevance-ranked table of contents is injected into context on every message, and Max writes daily conversation summaries on his own. Tell him once and he remembers forever.</p>
       </div>
     </div>
     <div class="what-item fade-in">
       <span class="what-item-number">03</span>
       <div class="what-item-content">
-        <h3>GitHub-native</h3>
-        <p><strong>Integrated with GitHub out of the box.</strong> PRs, issues, branches, deploys — Max can do anything with your repos. No setup, no tokens to manage, just works.</p>
+        <h3>Codes while you're away</h3>
+        <p><strong>Max spins up real Copilot CLI sessions</strong> as workers. Dispatches tasks, works on your repos, and reports back to your phone. You can be walking your dog and a bug gets fixed.</p>
       </div>
     </div>
     <div class="what-item fade-in">
       <span class="what-item-number">04</span>
       <div class="what-item-content">
-        <h3>Remembers everything</h3>
-        <p><strong>Max maintains a personal wiki — a living knowledge base that grows with every conversation.</strong> Preferences, people, projects, routines — organized into searchable markdown pages and automatically injected into context.</p>
+        <h3>GitHub-native</h3>
+        <p><strong>Integrated with GitHub out of the box.</strong> PRs, issues, branches, deploys — Max can do anything with your repos. No setup, no tokens to manage, just works.</p>
       </div>
     </div>
     <div class="what-item fade-in">
@@ -1118,12 +1118,16 @@
   </div>
   <div class="tools-list">
     <div class="tool-cell fade-in">
-      <h4>Worker Sessions <code>create_worker</code></h4>
-      <p>Spin up Copilot CLI instances in any directory. Dispatch tasks, run them in parallel, get notified when done.</p>
+      <h4>Wiki Memory <code>remember</code> <code>recall</code> <code>forget</code></h4>
+      <p>LLM-maintained wiki of entity pages — <code>people/burke.md</code>, <code>projects/max.md</code> — with frontmatter, tags, and <code>[[cross-links]]</code>. <code>remember</code> fuzzy-matches existing pages so facts merge instead of duplicating. <code>forget</code> does line-removal, section-rewrite, or page deletion.</p>
     </div>
     <div class="tool-cell fade-in">
-      <h4>Wiki Memory <code>remember</code> <code>recall</code> <code>wiki_update</code></h4>
-      <p>LLM-maintained wiki knowledge base. Max organizes what he learns into structured markdown pages — preferences, people, projects, routines — searchable and always in context.</p>
+      <h4>Wiki Tools <code>wiki_search</code> <code>wiki_read</code> <code>wiki_update</code> <code>wiki_ingest</code> <code>wiki_lint</code></h4>
+      <p>Full CRUD over the wiki. A ranked index is injected into context every message; Max drills in with <code>wiki_read</code>. Ingest URLs or docs as sources, and lint for broken links or orphan pages. Daily conversation summaries are written automatically.</p>
+    </div>
+    <div class="tool-cell fade-in">
+      <h4>Worker Sessions <code>create_worker</code></h4>
+      <p>Spin up Copilot CLI instances in any directory. Dispatch tasks, run them in parallel, get notified when done.</p>
     </div>
     <div class="tool-cell fade-in">
       <h4>Machine Sessions <code>list_machine</code></h4>
@@ -1140,10 +1144,6 @@
     <div class="tool-cell fade-in">
       <h4>Auto Routing <code>toggle_auto</code></h4>
       <p>Intelligent model routing picks the best model for each message. Fast tier for greetings, standard for code, premium for deep analysis. On by default.</p>
-    </div>
-    <div class="tool-cell fade-in">
-      <h4>Wiki Tools <code>wiki_search</code> <code>wiki_read</code> <code>wiki_ingest</code></h4>
-      <p>Full CRUD over the wiki. Search the index, read pages, ingest URLs or documents as sources, and lint for broken links or orphan pages.</p>
     </div>
     <div class="tool-cell fade-in">
       <h4>Self-Management <code>restart_max</code></h4>

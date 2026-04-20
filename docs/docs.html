@@ -518,7 +518,7 @@
     <tr><td>/cancel</td><td>Cancel the in-flight message</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
     <tr><td>/model</td><td>Show the current model</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
     <tr><td>/model &lt;name&gt;</td><td>Switch to a different model</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
-    <tr><td>/memory</td><td>Show all stored memories</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
+    <tr><td>/memory</td><td>Show the wiki index (everything Max has stored)</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
     <tr><td>/skills</td><td>List installed skills</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
     <tr><td>/workers</td><td>List active worker sessions</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
     <tr><td>/restart</td><td>Restart the Max daemon</td><td><span class="tag tag-tui">TUI</span> <span class="tag tag-tg">TG</span></td></tr>
@@ -603,29 +603,39 @@
 
 <h2 id="memory">Memory<span>.</span></h2>
 
-<p>Max has a wiki-based memory system that stores knowledge as interlinked markdown pages.</p>
+<p>Max has a wiki-based memory system that stores knowledge as interlinked markdown pages — organized like a personal Obsidian vault, not a flat list of facts.</p>
 
 <h3>Wiki knowledge base</h3>
-<p>Max maintains a personal wiki at <code>~/.max/wiki/</code> — a living knowledge base that grows with every conversation. Preferences, people, projects, routines — organized into searchable markdown pages with frontmatter, automatically indexed, and injected into context.</p>
+<p>Max maintains a personal wiki at <code>~/.max/wiki/</code> — a living knowledge base that grows with every conversation. Preferences, people, projects, routines — organized into searchable markdown pages with YAML frontmatter, automatically indexed, and injected into context.</p>
+
+<h3>Entity pages, not flat dumps</h3>
+<p>Max keeps a dedicated page per <em>entity</em> — <code>pages/people/burke.md</code>, <code>pages/projects/max.md</code> — instead of one giant <code>people.md</code>. New facts are merged into the right page, related entities are cross-linked with <code>[[wiki links]]</code>, and pages carry tags + <code>created</code>/<code>updated</code> dates in frontmatter.</p>
 
 <p>Max saves knowledge two ways:</p>
 <ul>
-  <li><strong>Explicitly</strong> — when you say "remember that I prefer TypeScript" or "remember that Sarah is my manager", Max uses the <code>remember</code> tool to save a quick fact to the wiki</li>
-  <li><strong>Proactively</strong> — Max automatically saves important facts he picks up in conversation</li>
+  <li><strong>Explicitly</strong> — when you say "remember that I prefer TypeScript" or "remember that Sarah is my manager", Max uses the <code>remember</code> tool. It fuzzy-matches existing pages, slugifies the entity, and routes the fact to the correct page rather than creating duplicates.</li>
+  <li><strong>Proactively</strong> — Max picks up important facts in conversation and files them away on his own, no permission required.</li>
 </ul>
 
-<p>For structured, longer-form knowledge, Max uses <code>wiki_update</code> to create or edit full pages. You can also ask Max to search his wiki (<code>wiki_search</code>), read specific pages (<code>wiki_read</code>), or ingest external content like URLs or documents (<code>wiki_ingest</code>).</p>
+<p>For structured, longer-form knowledge, Max uses <code>wiki_update</code> to create or edit full pages. You can also ask Max to search his wiki (<code>wiki_search</code>), read specific pages (<code>wiki_read</code>), ingest external content like URLs or documents (<code>wiki_ingest</code>), or run <code>wiki_lint</code> to find broken links and orphan pages.</p>
 
-<p>Use <code>/memory</code> to see everything Max has stored. Ask Max to <em>"forget that"</em> to remove specific content from a wiki page.</p>
+<h3>Index-first context injection</h3>
+<p>Every message Max receives is paired with a ranked <strong>table of contents</strong> of his entire wiki — pages scored by keyword relevance to the current message, recency (last 7 days get a boost), and tags. Max sees the index first, then uses <code>wiki_read</code> to drill into specific pages as needed. No more force-feeding stale page content into every prompt.</p>
+
+<h3>Episodic memory</h3>
+<p>After roughly every 10 turns of conversation (with a 30-minute idle gap), a lightweight background writer summarizes the session into a daily conversation page at <code>pages/conversations/YYYY-MM-DD.md</code> — with cross-references back to the people, projects, and decisions involved. This runs asynchronously after responses are delivered, so it never blocks you.</p>
+
+<h3>Forgetting</h3>
+<p>Ask Max to <em>"forget that"</em> and the <code>forget</code> tool picks the right surgery: removing a single line, rewriting a section of a synthesized entity page, or deleting a whole page. Use <code>/memory</code> to see the current wiki index.</p>
 
 <h3>Persistent session</h3>
 <p>Max maintains a single long-running orchestrator session using the Copilot SDK's <strong>infinite sessions</strong>. The SDK automatically compacts context in the background when it fills up, preserving important information. This means Max naturally remembers your conversation across messages — no manual history injection needed.</p>
 
 <h3>Conversation log</h3>
-<p>All messages are logged to SQLite with their source channel (Telegram, TUI, background). This provides cross-channel awareness — if you tell Max something on Telegram, the TUI session knows about it too.</p>
+<p>All messages are logged to SQLite with their source channel (Telegram, TUI, background). This provides cross-channel awareness — if you tell Max something on Telegram, the TUI session knows about it too. The log is also what feeds the episodic writer.</p>
 
-<h3>Migration from SQLite</h3>
-<p>If you're upgrading from an older version that used SQLite-based memories, Max automatically migrates your existing memories into wiki pages on first launch. No action needed.</p>
+<h3>Migration from SQLite memories</h3>
+<p>If you're upgrading from an older version that used flat SQLite-based memories, Max automatically migrates them into wiki pages on first launch, then runs a one-time reorganization pass that splits flat dumps into per-entity pages and archives the originals to <code>sources/migrated-archive/</code>. No action needed.</p>
 
 
 <h2 id="models">Models<span>.</span></h2>
@@ -736,7 +746,7 @@
   <li><strong>HTTP API</strong> — Express server on port 7777. The TUI connects via SSE for streaming; slash commands hit REST endpoints.</li>
   <li><strong>TUI</strong> (<code>max tui</code>) — a readline-based terminal interface that connects to the daemon's SSE stream.</li>
   <li><strong>Telegram Bot</strong> — Grammy-based bot that forwards messages to the orchestrator and relays responses.</li>
-  <li><strong>SQLite</strong> — stores worker state, conversation log, long-term memories, and daemon state at <code>~/.max/max.db</code>.</li>
+  <li><strong>SQLite</strong> — stores worker state, conversation log, and daemon state at <code>~/.max/max.db</code>. Long-term knowledge lives in the wiki at <code>~/.max/wiki/</code>, not in SQLite.</li>
 </ul>
 
 <p>All data lives in <code>~/.max/</code>:</p>

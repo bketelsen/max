@@ -2,6 +2,14 @@
 
 AI orchestrator powered by [Copilot SDK](https://github.com/github/copilot-sdk) — control multiple Copilot CLI sessions from Telegram or a local terminal.
 
+## Highlights
+
+- **Always running** — persistent daemon, not a chat tab. Available from your terminal or your phone.
+- **Remembers like a person** — Max keeps a personal wiki at `~/.max/wiki/` that grows with every conversation. Per-entity pages (`people/burke.md`, `projects/myapp.md`) with frontmatter, tags, and `[[cross-links]]`. A relevance-ranked index is injected into context on every message, and Max writes daily conversation summaries on his own.
+- **Codes while you're away** — spins up real Copilot CLI worker sessions in any directory and reports back when they're done.
+- **Learns any skill** — pulls from [skills.sh](https://skills.sh) or builds new skills on demand.
+- **Your Copilot subscription** — works with any model your subscription includes (Claude, GPT, Gemini, …). Auto mode picks the right tier per message.
+
 ## Install
 
 ```bash
@@ -75,7 +83,7 @@ From Telegram or the TUI, just send natural language:
 | Command | Description |
 |---------|-------------|
 | `/model [name]` | Show or switch the current model |
-| `/memory` | Show stored memories |
+| `/memory` | Show the wiki index (everything Max has stored) |
 | `/skills` | List installed skills |
 | `/workers` | List active worker sessions |
 | `/copy` | Copy last response to clipboard |
@@ -94,6 +102,17 @@ Max runs a persistent **orchestrator Copilot session** — an always-on AI brain
 You can talk to Max from:
 - **Telegram** — remote access from your phone (authenticated by user ID)
 - **TUI** — local terminal client (no auth needed)
+
+### Memory
+
+Max maintains a **personal wiki** at `~/.max/wiki/` instead of a flat list of memories. Knowledge is organized into per-entity markdown pages (e.g. `pages/people/burke.md`, `pages/projects/myapp.md`) with YAML frontmatter, tags, and `[[wiki links]]` between related pages.
+
+- **`remember`** — fuzzy-matches existing pages and merges new facts in instead of duplicating
+- **`recall`** / **`wiki_search`** / **`wiki_read`** — Max searches a ranked index first, then drills into specific pages
+- **`forget`** — line removal, section rewrite, or whole-page deletion
+- **Index-first context** — every message carries a relevance + recency-ranked table of contents of the wiki, so Max sees what he knows without force-feeding stale page bodies into every prompt
+- **Episodic memory** — after long enough conversations, Max writes a daily summary to `pages/conversations/YYYY-MM-DD.md` asynchronously, never blocking your reply
+- **Migration** — older SQLite-based memories are migrated and reorganized into entity pages on first launch; originals are archived to `sources/migrated-archive/`
 
 ## Architecture
 
