@@ -907,7 +907,7 @@
       <code onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/burkeholland/max/main/install.sh | bash')">curl -fsSL ...install.sh | bash</code>
       <code class="secondary" onclick="navigator.clipboard.writeText('npm install -g heymax')">npm i -g heymax</code>
     </div>
-    <span class="hero-label">built on github copilot sdk</span>
+    <span class="hero-label">v1.5 — built on github copilot sdk</span>
   </div>
   <div class="hero-right">
     <div class="tui-window">
@@ -989,8 +989,8 @@
     <div class="what-item fade-in">
       <span class="what-item-number">07</span>
       <div class="what-item-content">
-        <h3>Auto mode</h3>
-        <p><strong>Max automatically picks the best model for each message.</strong> Fast for simple questions, standard for coding, premium for complex analysis. Saves cost without sacrificing quality — no configuration needed.</p>
+        <h3>Specialist agents</h3>
+        <p><strong>Max delegates to specialist agents.</strong> <code>@coder</code> for implementation tasks, <code>@designer</code> for UI/UX work, or <code>@general-purpose</code> for anything else. Each runs in its own Copilot session with full tool access. Create your own agents with a simple markdown file.</p>
       </div>
     </div>
   </div>
@@ -1050,21 +1050,21 @@
       <line x1="385" y1="142" x2="1025" y2="142" stroke="rgba(17,24,39,0.06)" stroke-width="1"/>
 
       <!-- Workers label -->
-      <text x="390" y="180" font-family="Space Mono, monospace" font-size="13" fill="rgba(17,24,39,0.22)" letter-spacing="0.14em">WORKERS</text>
+      <text x="390" y="180" font-family="Space Mono, monospace" font-size="13" fill="rgba(17,24,39,0.22)" letter-spacing="0.14em">AGENTS</text>
 
       <!-- Worker 1 -->
       <rect x="390" y="196" width="190" height="90" rx="16" fill="rgba(14,165,233,0.04)" stroke="#0ea5e9" stroke-width="1.5"/>
-      <text x="485" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">Worker 1</text>
+      <text x="485" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">@coder</text>
       <text x="485" y="266" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="rgba(14,165,233,0.4)">Copilot CLI</text>
 
       <!-- Worker 2 -->
       <rect x="600" y="196" width="190" height="90" rx="16" fill="rgba(14,165,233,0.04)" stroke="#0ea5e9" stroke-width="1.5"/>
-      <text x="695" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">Worker 2</text>
+      <text x="695" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">@designer</text>
       <text x="695" y="266" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="rgba(14,165,233,0.4)">Copilot CLI</text>
 
       <!-- Worker 3 -->
       <rect x="810" y="196" width="190" height="90" rx="16" fill="rgba(14,165,233,0.04)" stroke="#0ea5e9" stroke-width="1.5"/>
-      <text x="905" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">Worker 3</text>
+      <text x="905" y="238" text-anchor="middle" font-family="Space Mono, monospace" font-size="18" font-weight="700" fill="#0ea5e9">@yours</text>
       <text x="905" y="266" text-anchor="middle" font-family="Space Mono, monospace" font-size="12" fill="rgba(14,165,233,0.4)">Copilot CLI</text>
 
       <!-- SDK foundation -->
@@ -1126,8 +1126,8 @@
       <p>Full CRUD over the wiki. A ranked index is injected into context every message; Max drills in with <code>wiki_read</code>. Ingest URLs or docs as sources, and lint for broken links or orphan pages. Daily conversation summaries are written automatically.</p>
     </div>
     <div class="tool-cell fade-in">
-      <h4>Worker Sessions <code>create_worker</code></h4>
-      <p>Spin up Copilot CLI instances in any directory. Dispatch tasks, run them in parallel, get notified when done.</p>
+      <h4>Agents <code>delegate_to_agent</code></h4>
+      <p>Delegate tasks to specialist agents — <code>@coder</code>, <code>@designer</code>, <code>@general-purpose</code>, or your own. Each runs in its own Copilot session. Use <code>@mentions</code> or let Max route automatically.</p>
     </div>
     <div class="tool-cell fade-in">
       <h4>Machine Sessions <code>list_machine</code></h4>
@@ -1142,8 +1142,8 @@
       <p>Switch between any model in your Copilot subscription — Claude, GPT, Gemini, and more. Just ask. Persisted across restarts.</p>
     </div>
     <div class="tool-cell fade-in">
-      <h4>Auto Routing <code>toggle_auto</code></h4>
-      <p>Intelligent model routing picks the best model for each message. Fast tier for greetings, standard for code, premium for deep analysis. On by default.</p>
+      <h4>Agent Management <code>create_agent</code> <code>remove_agent</code></h4>
+      <p>Create custom agents with a markdown file — set the name, description, model, and system prompt. Bundled agents auto-sync on updates; your customizations are preserved.</p>
     </div>
     <div class="tool-cell fade-in">
       <h4>Self-Management <code>restart_max</code></h4>
