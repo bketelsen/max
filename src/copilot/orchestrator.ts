@@ -32,6 +32,7 @@ const ORCHESTRATOR_SESSION_KEY = "orchestrator_session_id";
 export type MessageSource =
   | { type: "telegram"; chatId: number; messageId: number }
   | { type: "tui"; connectionId: string }
+  | { type: "web"; connectionId: string }
   | { type: "background" };
 
 export type MessageCallback = (text: string, done: boolean) => void;
@@ -44,7 +45,7 @@ export function setMessageLogger(fn: LogFn): void {
 }
 
 // Proactive notification — sends unsolicited messages to the user on a specific channel
-type ProactiveNotifyFn = (text: string, channel?: "telegram" | "tui") => void;
+type ProactiveNotifyFn = (text: string, channel?: "telegram" | "tui" | "web") => void;
 let proactiveNotifyFn: ProactiveNotifyFn | undefined;
 
 export function setProactiveNotify(fn: ProactiveNotifyFn): void {
@@ -73,7 +74,7 @@ type QueuedMessage = {
   prompt: string;
   attachments?: Array<{ type: "file"; path: string; displayName?: string }>;
   callback: MessageCallback;
-  sourceChannel?: "telegram" | "tui";
+  sourceChannel?: "telegram" | "tui" | "web";
   /** Target agent slug for @mention routing. If undefined, goes to orchestrator. */
   targetAgent?: string;
   /** Conversation channel key for sticky routing, e.g. "telegram:123" or "tui:conn-1". */
@@ -85,10 +86,10 @@ const messageQueue: QueuedMessage[] = [];
 let processing = false;
 let currentCallback: MessageCallback | undefined;
 /** The channel currently being processed — tools use this to tag new workers. */
-let currentSourceChannel: "telegram" | "tui" | undefined;
+let currentSourceChannel: "telegram" | "tui" | "web" | undefined;
 
 /** Get the channel that originated the message currently being processed. */
-export function getCurrentSourceChannel(): "telegram" | "tui" | undefined {
+export function getCurrentSourceChannel(): "telegram" | "tui" | "web" | undefined {
   return currentSourceChannel;
 }
 
@@ -113,7 +114,7 @@ export function feedAgentResult(taskId: string, agentSlug: string, result: strin
         // Route notification to the task's origin channel
         const tasks = getActiveTasks();
         const task = tasks.find((t) => t.taskId === taskId);
-        const channel = task?.originChannel as "telegram" | "tui" | undefined;
+        const channel = task?.originChannel as "telegram" | "tui" | "web" | undefined;
         proactiveNotifyFn(_text, channel);
       }
     }
@@ -430,7 +431,8 @@ export async function sendToOrchestrator(
 ): Promise<void> {
   const sourceLabel =
     source.type === "telegram" ? "telegram" :
-    source.type === "tui" ? "tui" : "background";
+    source.type === "tui" ? "tui" :
+    source.type === "web" ? "web" : "background";
   logMessage("in", sourceLabel, prompt);
 
   // Parse @mention routing (e.g., "@coder fix the bug" → target "coder")
@@ -447,9 +449,10 @@ export async function sendToOrchestrator(
   const logRole = source.type === "background" ? "system" : "user";
 
   // Determine the source channel for agent origin tracking
-  const sourceChannel: "telegram" | "tui" | undefined =
+  const sourceChannel: "telegram" | "tui" | "web" | undefined =
     source.type === "telegram" ? "telegram" :
-    source.type === "tui" ? "tui" : undefined;
+    source.type === "tui" ? "tui" :
+    source.type === "web" ? "web" : undefined;
 
   // Enqueue and process
   void (async () => {

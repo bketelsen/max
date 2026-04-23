@@ -11,6 +11,8 @@ import { readPage, ensureWikiStructure } from "../wiki/fs.js";
 import { listSkills, removeSkill } from "../copilot/skills.js";
 import { restartDaemon } from "../daemon.js";
 import { API_TOKEN_PATH, ensureMaxHome } from "../paths.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Ensure token file exists (generate on first run)
 let apiToken: string | null = null;
@@ -30,9 +32,39 @@ try {
 const app = express();
 app.use(express.json());
 
-// Bearer token authentication middleware (skip /status health check)
+// Static web UI (built to web/dist). Serving before auth so the browser can
+// fetch index.html and assets without a bearer token; the sensitive API routes
+// below still require auth.
+const webDist = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../web/dist"
+);
+app.use(express.static(webDist));
+
+// SPA fallback: serve index.html for any GET that isn't an API path. Lets the
+// web UI use client-side routing without 404s on refresh. Must run before the
+// auth middleware so HTML navigation to unknown paths doesn't return 401.
+const API_PATHS = new Set([
+  "/status", "/auth/bootstrap", "/message", "/stream", "/cancel",
+  "/agents", "/sessions", "/model", "/models", "/auto",
+  "/memory", "/skills", "/restart", "/send-photo",
+]);
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!apiToken || req.path === "/status") return next();
+  if (req.method !== "GET") return next();
+  if (API_PATHS.has(req.path)) return next();
+  for (const p of API_PATHS) {
+    if (req.path.startsWith(p + "/")) return next();
+  }
+  res.sendFile(path.join(webDist, "index.html"), (err) => {
+    if (err) next();
+  });
+});
+
+// Bearer token authentication middleware (skip /status health check and the
+// localhost-only token bootstrap used by the web UI)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!apiToken) return next();
+  if (req.path === "/status" || req.path === "/auth/bootstrap") return next();
   const auth = req.headers.authorization;
   if (!auth || auth !== `Bearer ${apiToken}`) {
     res.status(401).json({ error: "Unauthorized" });
@@ -44,6 +76,19 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Active SSE connections
 const sseClients = new Map<string, Response>();
 let connectionCounter = 0;
+
+// Token bootstrap for the web UI. Safe because the server binds to 127.0.0.1
+// only; double-checks the remote address as defense in depth.
+app.get("/auth/bootstrap", (req: Request, res: Response) => {
+  const ip = req.socket.remoteAddress ?? "";
+  const isLocal =
+    ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (!isLocal) {
+    res.status(403).json({ error: "localhost only" });
+    return;
+  }
+  res.json({ token: apiToken });
+});
 
 // Health check — intentionally unauthenticated, returns no sensitive data
 app.get("/status", (_req: Request, res: Response) => {
@@ -70,12 +115,19 @@ app.get("/sessions", (_req: Request, res: Response) => {
 
 // SSE stream for real-time responses
 app.get("/stream", (req: Request, res: Response) => {
-  const connectionId = `tui-${++connectionCounter}`;
+  const client = req.headers["x-max-client"];
+  const isWeb = typeof client === "string" && client.toLowerCase() === "web";
+  const connectionId = `${isWeb ? "web" : "tui"}-${++connectionCounter}`;
 
+  // Disable Nagle so individual token deltas are flushed immediately instead of
+  // being coalesced for up to ~40ms. X-Accel-Buffering disables proxy buffering
+  // for deployments that sit behind nginx.
+  res.socket?.setNoDelay(true);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
   res.write(`data: ${JSON.stringify({ type: "connected", connectionId })}\n\n`);
 
@@ -106,9 +158,14 @@ app.post("/message", (req: Request, res: Response) => {
     return;
   }
 
+  const isWeb = connectionId.startsWith("web-");
+  const source = isWeb
+    ? ({ type: "web", connectionId } as const)
+    : ({ type: "tui", connectionId } as const);
+
   sendToOrchestrator(
     prompt,
-    { type: "tui", connectionId },
+    source,
     (text: string, done: boolean) => {
       const sseRes = sseClients.get(connectionId);
       if (sseRes) {

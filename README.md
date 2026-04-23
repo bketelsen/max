@@ -72,6 +72,31 @@ From Telegram or the TUI, just send natural language:
 - "Kill the auth-fix session"
 - "What's the capital of France?"
 
+## Run Max as an always-on service (Linux)
+
+For Max to be available all the time without having to keep a terminal open, install it as a systemd **user** service:
+
+```bash
+max service install
+```
+
+This writes a unit file to `~/.config/systemd/user/max.service` and starts it. No `sudo` required. Subsequent management:
+
+```bash
+max service status     # state + recent logs
+journalctl --user -u max -f    # follow logs live
+systemctl --user restart max   # pick up config changes
+max service uninstall  # stop and remove
+```
+
+By default the service starts when you log in and stops when you log out. To keep it running across logouts and reboots, enable user-lingering once (the one step that needs sudo):
+
+```bash
+sudo loginctl enable-linger $USER
+```
+
+macOS and Windows service integrations are not yet built — on those platforms run `max start` inside your terminal multiplexer of choice.
+
 ## Commands
 
 | Command | Description |
@@ -79,6 +104,9 @@ From Telegram or the TUI, just send natural language:
 | `max start` | Start the Max daemon |
 | `max tui` | Connect to the daemon via terminal |
 | `max setup` | Interactive first-run configuration |
+| `max service install` | Install and start Max as a systemd user service (Linux) |
+| `max service status` | Show service state and recent logs |
+| `max service uninstall` | Stop and remove the service |
 | `max update` | Check for and install updates |
 | `max help` | Show available commands |
 

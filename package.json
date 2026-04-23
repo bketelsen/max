@@ -7,12 +7,18 @@
   },
   "files": [
     "dist/**/*.js",
+    "web/dist/**",
+    "scripts/*.template",
     "agents/",
     "skills/",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run web:build",
+    "build:daemon": "tsc",
+    "web:install": "npm --prefix web install",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
     "daemon": "tsx src/daemon.ts",
     "tui": "tsx src/tui/index.ts",
     "dev": "tsx --watch src/daemon.ts",

@@ -1,0 +1,23 @@
+[Unit]
+Description=Max — personal AI assistant daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__MAX_BIN__ start
+WorkingDirectory=__HOME__
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+Environment=PATH=__PATH__
+Environment=HOME=__HOME__
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=max
+
+[Install]
+WantedBy=default.target

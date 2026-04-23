@@ -27,6 +27,7 @@ Commands:
   start       Start the Max daemon (Telegram bot + HTTP API)
   tui         Connect to the daemon via terminal UI
   setup       Interactive first-run configuration
+  service     Install/manage Max as a systemd user service (Linux)
   update      Check for updates and install the latest version
   help        Show this help message
 
@@ -34,10 +35,11 @@ Flags (start):
   --self-edit Allow Max to modify his own source code (off by default)
 
 Examples:
-  max start           Start the daemon
+  max start              Start the daemon
   max start --self-edit  Start with self-edit enabled
-  max tui             Open the terminal client
-  max setup           Configure Telegram token and settings
+  max tui                Open the terminal client
+  max setup              Configure Telegram token and settings
+  max service install    Run Max as an always-on systemd service
 `.trim());
 }
 
@@ -60,6 +62,22 @@ switch (command) {
   case "setup":
     await import("./setup.js");
     break;
+  case "service": {
+    const { installService, uninstallService, serviceStatus, printServiceHelp } =
+      await import("./service.js");
+    const sub = args[1];
+    if (sub === "install") {
+      await installService();
+    } else if (sub === "uninstall") {
+      await uninstallService();
+    } else if (sub === "status") {
+      await serviceStatus();
+    } else {
+      printServiceHelp();
+      if (sub) process.exit(1);
+    }
+    break;
+  }
   case "update": {
     const { checkForUpdate, performUpdate } = await import("./update.js");
     const check = await checkForUpdate();

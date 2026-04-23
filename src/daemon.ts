@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     if (!channel || channel === "telegram") {
       if (config.telegramEnabled) sendProactiveMessage(text);
     }
-    if (!channel || channel === "tui") {
+    if (!channel || channel === "tui" || channel === "web") {
       broadcastToSSE(text);
     }
   });
