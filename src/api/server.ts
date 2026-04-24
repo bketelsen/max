@@ -11,6 +11,9 @@ import { readPage, ensureWikiStructure } from "../wiki/fs.js";
 import { listSkills, removeSkill } from "../copilot/skills.js";
 import { restartDaemon } from "../daemon.js";
 import { API_TOKEN_PATH, ensureMaxHome } from "../paths.js";
+import { authRouter } from "./auth-routes.js";
+import { parseCookies, validateSession } from "./auth.js";
+import { isAuthConfigured } from "../store/db.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,9 +52,11 @@ const API_PATHS = new Set([
   "/agents", "/sessions", "/model", "/models", "/auto",
   "/memory", "/skills", "/restart", "/send-photo",
 ]);
+const AUTH_PREFIX = "/auth/";
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.method !== "GET") return next();
   if (API_PATHS.has(req.path)) return next();
+  if (req.path.startsWith(AUTH_PREFIX)) return next();
   for (const p of API_PATHS) {
     if (req.path.startsWith(p + "/")) return next();
   }
@@ -60,17 +65,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Bearer token authentication middleware (skip /status health check and the
-// localhost-only token bootstrap used by the web UI)
+// Register auth routes (login, setup, passkey, etc.) — these handle their own
+// auth checks internally (public vs localhost-only).
+app.use(authRouter);
+
+// Layered authentication middleware:
+// 1. Localhost requests → pass (preserves existing dev/TUI UX)
+// 2. Valid session cookie (max_session) → pass (LAN browser clients)
+// 3. Valid bearer token → pass (TUI/API clients)
+// 4. Public paths (/status, /auth/*) → pass
+// 5. Otherwise → 401
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!apiToken) return next();
-  if (req.path === "/status" || req.path === "/auth/bootstrap") return next();
-  const auth = req.headers.authorization;
-  if (!auth || auth !== `Bearer ${apiToken}`) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+  // Public paths
+  if (req.path === "/status") return next();
+  if (req.path.startsWith(AUTH_PREFIX)) return next();
+
+  // Localhost bypass
+  const ip = req.socket.remoteAddress ?? "";
+  const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (isLocal) return next();
+
+  // Session cookie
+  const cookies = parseCookies(req.headers.cookie);
+  if (cookies.max_session && validateSession(cookies.max_session)) return next();
+
+  // Bearer token (TUI, API clients, localhost web UI bootstrap)
+  if (apiToken) {
+    const auth = req.headers.authorization;
+    if (auth && auth === `Bearer ${apiToken}`) return next();
   }
-  next();
+
+  // Auth not configured yet → allow access (first-run scenario on LAN)
+  if (!isAuthConfigured()) return next();
+
+  res.status(401).json({ error: "Unauthorized" });
 });
 
 // Active SSE connections
@@ -348,8 +376,8 @@ app.post("/send-photo", async (req: Request, res: Response) => {
 
 export function startApiServer(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const server = app.listen(config.apiPort, "127.0.0.1", () => {
-      console.log(`[max] HTTP API listening on http://127.0.0.1:${config.apiPort}`);
+    const server = app.listen(config.apiPort, config.apiBind, () => {
+      console.log(`[max] HTTP API listening on http://${config.apiBind}:${config.apiPort}`);
       resolve();
     });
     server.on("error", (err: NodeJS.ErrnoException) => {

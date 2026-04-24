@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { CopyIcon } from "lucide-react";
 import {
   Conversation,
@@ -24,6 +24,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useMaxChat, type RouteInfo, type UIMessage } from "@/hooks/useMaxChat";
+import { useAuth } from "@/hooks/useAuth";
+import { LoginPage } from "@/components/auth/login-page";
+import { SetupPage, SetupRequiredPage } from "@/components/auth/setup-page";
 
 function RouteBadge({ route }: { route: RouteInfo }) {
   const shortModel = route.model.replace(/^claude-/, "");
@@ -80,6 +83,44 @@ function AssistantMessage({
 }
 
 export default function App() {
+  const auth = useAuth();
+
+  // Loading state
+  if (auth.loading || !auth.status) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-background text-foreground">
+        <span className="text-sm text-muted-foreground">Loading…</span>
+      </div>
+    );
+  }
+
+  const { status } = auth;
+
+  // Auth not configured + not localhost → tell user to set up from localhost
+  if (!status.configured && !status.localhost) {
+    return <SetupRequiredPage />;
+  }
+
+  // Localhost + not configured (or configured) → show setup page if user navigates to it
+  // For localhost we also show the main app since auth is bypassed
+  // Not authenticated + not localhost → show login page
+  if (!status.authenticated && !status.localhost) {
+    return (
+      <LoginPage
+        methods={status.methods}
+        loginTotp={auth.loginTotp}
+        loginPasskey={auth.loginPasskey}
+        error={auth.error}
+      />
+    );
+  }
+
+  // Authenticated or localhost → show main app (with optional setup access on localhost)
+  return <MainApp auth={auth} />;
+}
+
+function MainApp({ auth }: { auth: ReturnType<typeof useAuth> }) {
+  const [showSetup, setShowSetup] = useState(false);
   const { messages, status, connected, sendMessage, cancel } = useMaxChat();
 
   const handleSubmit = useCallback(
@@ -96,6 +137,32 @@ export default function App() {
       void navigator.clipboard.writeText(text);
     }
   }, []);
+
+  if (showSetup && auth.status?.localhost) {
+    return (
+      <div>
+        <div className="flex items-center justify-between border-b px-4 py-3 md:px-6 bg-background">
+          <h1 className="text-base font-semibold">Max — Auth Setup</h1>
+          <button
+            type="button"
+            onClick={() => setShowSetup(false)}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            ← Back to chat
+          </button>
+        </div>
+        <SetupPage
+          setupTotp={auth.setupTotp}
+          removeTotp={auth.removeTotp}
+          registerPasskey={auth.registerPasskey}
+          listPasskeys={auth.listPasskeys}
+          deletePasskey={auth.deletePasskey}
+          methods={auth.status.methods}
+          error={auth.error}
+        />
+      </div>
+    );
+  }
 
   return (
     <TooltipProvider>
@@ -116,6 +183,26 @@ export default function App() {
               }
               aria-label={connected ? "Connected" : "Connecting"}
             />
+          </div>
+          <div className="flex items-center gap-2">
+            {auth.status?.localhost && (
+              <button
+                type="button"
+                onClick={() => setShowSetup(true)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Auth Setup
+              </button>
+            )}
+            {auth.status?.authenticated && !auth.status?.localhost && (
+              <button
+                type="button"
+                onClick={auth.logout}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </header>
 

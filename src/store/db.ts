@@ -129,6 +129,30 @@ export function getDb(): Database.Database {
       // FTS5 not available in this SQLite build — fall back to LIKE queries
       fts5Available = false;
     }
+
+    // Auth tables for TOTP + Passkey authentication
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS auth_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS passkey_credentials (
+        credential_id TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        transports TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        token TEXT PRIMARY KEY,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL
+      )
+    `);
   }
   return db;
 }
@@ -188,6 +212,112 @@ export function getRecentConversation(limit = 20): string {
 // The memories table and FTS5 index are preserved in the schema for safety
 // (existing data is not deleted), but no code reads or writes to them.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+/** Check whether any auth method (TOTP or Passkey) has been configured. */
+export function isAuthConfigured(): boolean {
+  const db = getDb();
+  const totp = db.prepare(`SELECT value FROM auth_config WHERE key = 'totp_secret'`).get() as { value: string } | undefined;
+  if (totp) return true;
+  const passkey = db.prepare(`SELECT credential_id FROM passkey_credentials LIMIT 1`).get();
+  return !!passkey;
+}
+
+/** Get which auth methods are configured. */
+export function getAuthMethods(): ("totp" | "passkey")[] {
+  const db = getDb();
+  const methods: ("totp" | "passkey")[] = [];
+  const totp = db.prepare(`SELECT value FROM auth_config WHERE key = 'totp_secret'`).get();
+  if (totp) methods.push("totp");
+  const passkey = db.prepare(`SELECT credential_id FROM passkey_credentials LIMIT 1`).get();
+  if (passkey) methods.push("passkey");
+  return methods;
+}
+
+export function getTotpSecret(): string | undefined {
+  const db = getDb();
+  const row = db.prepare(`SELECT value FROM auth_config WHERE key = 'totp_secret'`).get() as { value: string } | undefined;
+  return row?.value;
+}
+
+export function setTotpSecret(secret: string): void {
+  const db = getDb();
+  db.prepare(`INSERT OR REPLACE INTO auth_config (key, value) VALUES ('totp_secret', ?)`).run(secret);
+}
+
+export function deleteTotpSecret(): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM auth_config WHERE key = 'totp_secret'`).run();
+}
+
+export interface StoredPasskey {
+  credential_id: string;
+  public_key: string;
+  counter: number;
+  transports: string | null;
+  created_at: string;
+}
+
+export function addPasskey(credentialId: string, publicKey: string, counter: number, transports: string[]): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO passkey_credentials (credential_id, public_key, counter, transports) VALUES (?, ?, ?, ?)`
+  ).run(credentialId, publicKey, counter, JSON.stringify(transports));
+}
+
+export function getPasskeys(): StoredPasskey[] {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM passkey_credentials ORDER BY created_at`).all() as StoredPasskey[];
+}
+
+export function getPasskeyById(credentialId: string): StoredPasskey | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM passkey_credentials WHERE credential_id = ?`).get(credentialId) as StoredPasskey | undefined;
+}
+
+export function updatePasskeyCounter(credentialId: string, counter: number): void {
+  const db = getDb();
+  db.prepare(`UPDATE passkey_credentials SET counter = ? WHERE credential_id = ?`).run(counter, credentialId);
+}
+
+export function deletePasskey(credentialId: string): boolean {
+  const db = getDb();
+  const result = db.prepare(`DELETE FROM passkey_credentials WHERE credential_id = ?`).run(credentialId);
+  return result.changes > 0;
+}
+
+export function createAuthSession(token: string, expiresAt: Date): void {
+  const db = getDb();
+  db.prepare(`INSERT INTO auth_sessions (token, expires_at) VALUES (?, ?)`).run(token, expiresAt.toISOString());
+}
+
+export function validateAuthSession(token: string): boolean {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT token FROM auth_sessions WHERE token = ? AND expires_at > datetime('now')`
+  ).get(token);
+  return !!row;
+}
+
+export function deleteAuthSession(token: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM auth_sessions WHERE token = ?`).run(token);
+}
+
+export function pruneExpiredSessions(): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM auth_sessions WHERE expires_at <= datetime('now')`).run();
+}
+
+export function clearAllAuth(): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM auth_config`).run();
+  db.prepare(`DELETE FROM passkey_credentials`).run();
+  db.prepare(`DELETE FROM auth_sessions`).run();
+}
 
 export function closeDb(): void {
   if (db) {

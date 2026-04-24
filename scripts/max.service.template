@@ -14,6 +14,7 @@ StartLimitBurst=5
 
 Environment=PATH=__PATH__
 Environment=HOME=__HOME__
+EnvironmentFile=-__ENV_FILE__
 
 StandardOutput=journal
 StandardError=journal

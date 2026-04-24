@@ -73,10 +73,13 @@ export async function installService(): Promise<void> {
   const home = homedir();
   const path = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
 
+  const envFile = join(home, ".max", ".env");
+
   const unit = template
     .replaceAll("__MAX_BIN__", bin)
     .replaceAll("__HOME__", home)
-    .replaceAll("__PATH__", path);
+    .replaceAll("__PATH__", path)
+    .replaceAll("__ENV_FILE__", envFile);
 
   const out = unitPath();
   mkdirSync(dirname(out), { recursive: true });

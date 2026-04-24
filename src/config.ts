@@ -11,6 +11,10 @@ const configSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   AUTHORIZED_USER_ID: z.string().min(1).optional(),
   API_PORT: z.string().optional(),
+  API_BIND: z.string().optional(),
+  AUTH_RP_ID: z.string().optional(),
+  AUTH_RP_ORIGIN: z.string().optional(),
+  AUTH_SESSION_TTL: z.string().optional(),
   COPILOT_MODEL: z.string().optional(),
   WORKER_TIMEOUT: z.string().optional(),
 });
@@ -42,10 +46,19 @@ export const DEFAULT_MODEL = "claude-sonnet-4.6";
 
 let _copilotModel = raw.COPILOT_MODEL || DEFAULT_MODEL;
 
+const DEFAULT_SESSION_TTL_HOURS = 720; // 30 days
+const parsedSessionTtl = raw.AUTH_SESSION_TTL
+  ? Number(raw.AUTH_SESSION_TTL)
+  : DEFAULT_SESSION_TTL_HOURS;
+
 export const config = {
   telegramBotToken: raw.TELEGRAM_BOT_TOKEN,
   authorizedUserId: parsedUserId,
   apiPort: parsedPort,
+  apiBind: raw.API_BIND || "127.0.0.1",
+  authRpId: raw.AUTH_RP_ID || "localhost",
+  authRpOrigin: raw.AUTH_RP_ORIGIN || `http://localhost:${parsedPort}`,
+  authSessionTtlHours: parsedSessionTtl,
   workerTimeoutMs: parsedWorkerTimeout,
   get copilotModel(): string {
     return _copilotModel;

@@ -27,6 +27,7 @@ Commands:
   start       Start the Max daemon (Telegram bot + HTTP API)
   tui         Connect to the daemon via terminal UI
   setup       Interactive first-run configuration
+  auth        Manage TOTP/Passkey authentication for LAN access
   service     Install/manage Max as a systemd user service (Linux)
   update      Check for updates and install the latest version
   help        Show this help message
@@ -62,6 +63,11 @@ switch (command) {
   case "setup":
     await import("./setup.js");
     break;
+  case "auth": {
+    const { runAuthCli } = await import("./auth-cli.js");
+    await runAuthCli(args.slice(1));
+    break;
+  }
   case "service": {
     const { installService, uninstallService, serviceStatus, printServiceHelp } =
       await import("./service.js");

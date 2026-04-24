@@ -47,22 +47,30 @@ export function useMaxChat() {
 
     (async () => {
       try {
-        const bootRes = await fetch("/auth/bootstrap", {
-          signal: abort.signal,
-        });
-        if (!bootRes.ok) {
-          throw new Error(`bootstrap failed: ${bootRes.status}`);
+        // Try bootstrap for token (works on localhost); LAN clients rely on session cookie.
+        try {
+          const bootRes = await fetch("/auth/bootstrap", {
+            signal: abort.signal,
+            credentials: "include",
+          });
+          if (bootRes.ok) {
+            const { token } = (await bootRes.json()) as { token: string };
+            tokenRef.current = token;
+          }
+        } catch {
+          // Bootstrap not available (LAN) — proceed with cookie-only auth
         }
-        const { token } = (await bootRes.json()) as { token: string };
-        tokenRef.current = token;
+
+        const headers: Record<string, string> = { "X-Max-Client": "web" };
+        if (tokenRef.current) {
+          headers["Authorization"] = `Bearer ${tokenRef.current}`;
+        }
 
         await openSseStream(
           "/stream",
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "X-Max-Client": "web",
-            },
+            headers,
+            credentials: "include",
           },
           (evt) => {
             let parsed: MaxSseEvent;
@@ -129,9 +137,8 @@ export function useMaxChat() {
   }
 
   const sendMessage = useCallback(async (text: string) => {
-    const token = tokenRef.current;
     const connectionId = connectionIdRef.current;
-    if (!token || !connectionId) return;
+    if (!connectionId) return;
 
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -145,13 +152,17 @@ export function useMaxChat() {
     setStatus("submitted");
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Max-Client": "web",
+      };
+      if (tokenRef.current) {
+        headers["Authorization"] = `Bearer ${tokenRef.current}`;
+      }
       const res = await fetch("/message", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-Max-Client": "web",
-        },
+        headers,
+        credentials: "include",
         body: JSON.stringify({ prompt: trimmed, connectionId }),
       });
       if (!res.ok) {
@@ -165,15 +176,15 @@ export function useMaxChat() {
   }, []);
 
   const cancel = useCallback(async () => {
-    const token = tokenRef.current;
-    if (!token) return;
     try {
+      const headers: Record<string, string> = { "X-Max-Client": "web" };
+      if (tokenRef.current) {
+        headers["Authorization"] = `Bearer ${tokenRef.current}`;
+      }
       await fetch("/cancel", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Max-Client": "web",
-        },
+        headers,
+        credentials: "include",
       });
     } catch (err) {
       console.error("[max] cancel failed:", err);
