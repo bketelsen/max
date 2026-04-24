@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
+import { parseDocument } from "yaml";
 import { approveAll, type CopilotClient, type CopilotSession, type Tool } from "@github/copilot-sdk";
 import { AGENTS_DIR, SESSIONS_DIR } from "../paths.js";
 import { getDb, getState, setState } from "../store/db.js";
@@ -96,12 +97,14 @@ const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Parse YAML frontmatter and markdown body from an .agent.md file. */
 export function parseAgentMd(content: string, slug: string): AgentConfig | null {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---\s*([\s\S]*)$/);
+  const normalizedContent = content.replace(/^\uFEFF/, "");
+  const fmMatch = normalizedContent.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
   if (!fmMatch) return null;
 
   const frontmatterRaw = fmMatch[1];
   const body = fmMatch[2].trim();
-  const parsed = parseAgentFrontmatter(frontmatterRaw);
+  const parsed = parseAgentFrontmatter(frontmatterRaw, slug);
+  if (!parsed) return null;
 
   const result = agentFrontmatterSchema.safeParse(parsed);
   if (!result.success) {
@@ -224,60 +227,21 @@ export function ensureDefaultAgents(options: EnsureDefaultAgentsOptions = {}): v
   }
 }
 
-function parseAgentFrontmatter(frontmatterRaw: string): Record<string, unknown> {
-  const parsed: Record<string, unknown> = {};
-  const lines = frontmatterRaw.split("\n");
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    const match = line.match(/^([^:#][^:]*):(.*)$/);
-    if (!match) continue;
-
-    const key = match[1].trim();
-    const rawValue = match[2].trim();
-
-    if (rawValue.length === 0) {
-      const items: string[] = [];
-      let nextIndex = index + 1;
-
-      while (nextIndex < lines.length) {
-        const itemMatch = lines[nextIndex].match(/^\s*-\s+(.*)$/);
-        if (!itemMatch) break;
-        items.push(stripYamlQuotes(itemMatch[1].trim()));
-        nextIndex++;
-      }
-
-      if (items.length > 0) {
-        parsed[key] = items;
-        index = nextIndex - 1;
-      }
-      continue;
-    }
-
-    const inlineArray = rawValue.match(/^\[(.*)\]$/);
-    if (inlineArray) {
-      parsed[key] = inlineArray[1]
-        .split(",")
-        .map((value) => stripYamlQuotes(value.trim()))
-        .filter(Boolean);
-      continue;
-    }
-
-    parsed[key] = stripYamlQuotes(rawValue);
+function parseAgentFrontmatter(frontmatterRaw: string, slug: string): Record<string, unknown> | null {
+  const document = parseDocument(frontmatterRaw);
+  if (document.errors.length > 0) {
+    console.warn(
+      `[agents] Invalid YAML frontmatter in ${slug}.agent.md: ${document.errors[0]?.message ?? "unknown error"}`
+    );
+    return null;
   }
 
-  return parsed;
-}
-
-function stripYamlQuotes(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
+  const parsed = document.toJS();
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
   }
 
-  return value;
+  return parsed as Record<string, unknown>;
 }
 
 /** Create a new agent .md file. Returns error string or null on success. */

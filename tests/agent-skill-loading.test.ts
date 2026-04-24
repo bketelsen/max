@@ -67,6 +67,34 @@ You are Designer.
   assert.deepEqual(config.mcpServers, ["github"]);
 });
 
+test("parseAgentMd preserves multiline YAML arrays with comments in .agent.md frontmatter", async () => {
+  const agentsModule = await import(uniqueImport("../src/copilot/agents.ts"));
+
+  const config = agentsModule.parseAgentMd(
+    `---
+name: Architect
+description: Planning specialist
+model: claude-opus-4.6
+skills:
+  - brainstorming
+  # Keep critique available for design review.
+  - code-review
+tools:
+  - view
+  # Shell access is needed for repo inspection.
+  - bash
+---
+
+You are Architect.
+`,
+    "architect"
+  );
+
+  assert.ok(config);
+  assert.deepEqual(config.skills, ["brainstorming", "code-review"]);
+  assert.deepEqual(config.tools, ["view", "bash"]);
+});
+
 test("ensureDefaultAgents warns when the bundled agents directory is missing", async () => {
   const agentsModule = await import(uniqueImport("../src/copilot/agents.ts"));
   const warnings: string[] = [];
