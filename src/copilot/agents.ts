@@ -50,7 +50,7 @@ export interface AgentStatusInfo {
   name: string;
   description: string;
   model: string;
-  currentTask: AgentTaskSummary | null;
+  runningTasks: AgentTaskSummary[];
   recentTasks: AgentTaskSummary[];
 }
 
@@ -335,9 +335,10 @@ export function buildAgentStatusRoster(
   recentTasksCache: ReadonlyMap<string, AgentTaskInfo[]>
 ): AgentStatusInfo[] {
   return registry.map((agent) => {
-    const currentTask = tasks
+    const runningTasks = tasks
       .filter((task) => task.agentSlug === agent.slug && task.status === "running")
-      .sort((left, right) => right.startedAt - left.startedAt)[0];
+      .sort((left, right) => right.startedAt - left.startedAt)
+      .map(toAgentTaskSummary);
     const recentTasks = recentTasksCache.get(agent.slug) ?? [];
 
     return {
@@ -345,7 +346,7 @@ export function buildAgentStatusRoster(
       name: agent.name,
       description: agent.description,
       model: agent.model,
-      currentTask: currentTask ? toAgentTaskSummary(currentTask) : null,
+      runningTasks,
       recentTasks: recentTasks.map(toAgentTaskSummary),
     };
   });

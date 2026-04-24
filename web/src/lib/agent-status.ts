@@ -15,7 +15,7 @@ export interface AgentStatusInfo {
   name: string;
   description: string;
   model: string;
-  currentTask: AgentTaskSummary | null;
+  runningTasks: AgentTaskSummary[];
   recentTasks: AgentTaskSummary[];
 }
 
@@ -29,18 +29,31 @@ function getTaskSortTimestamp(task: AgentTaskSummary): number {
   return task.completedAt ?? task.startedAt;
 }
 
+function sortTasksByLatestTimestamp(tasks: readonly AgentTaskSummary[]): AgentTaskSummary[] {
+  return [...tasks].sort((left, right) => getTaskSortTimestamp(right) - getTaskSortTimestamp(left));
+}
+
+export function getAgentStatusDisplayTasks(agent: AgentStatusInfo): AgentTaskSummary[] {
+  if (agent.runningTasks.length > 0) {
+    return sortTasksByLatestTimestamp(agent.runningTasks);
+  }
+
+  const mostRecentTask = sortTasksByLatestTimestamp(agent.recentTasks)[0];
+  return mostRecentTask ? [mostRecentTask] : [];
+}
+
 export function deriveAgentBadgeState(agent: AgentStatusInfo): AgentBadgeState {
-  if (agent.currentTask) {
+  const currentTask = sortTasksByLatestTimestamp(agent.runningTasks)[0];
+
+  if (currentTask) {
     return {
       tone: "running",
       label: "Running",
-      task: agent.currentTask,
+      task: currentTask,
     };
   }
 
-  const mostRecentTask = [...agent.recentTasks].sort(
-    (left, right) => getTaskSortTimestamp(right) - getTaskSortTimestamp(left)
-  )[0];
+  const mostRecentTask = sortTasksByLatestTimestamp(agent.recentTasks)[0];
 
   if (mostRecentTask?.status === "completed") {
     return {

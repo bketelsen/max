@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { AgentConfig, AgentTaskInfo } from "../src/copilot/agents.ts";
 import { buildAgentStatusRoster } from "../src/copilot/agents.ts";
 
-test("buildAgentStatusRoster returns the full registered roster with current and recent tasks", () => {
+test("buildAgentStatusRoster returns the full registered roster with running and recent tasks", () => {
   const registry: AgentConfig[] = [
     {
       slug: "coder",
@@ -23,6 +23,14 @@ test("buildAgentStatusRoster returns the full registered roster with current and
   ];
 
   const activeTasks: AgentTaskInfo[] = [
+    {
+      taskId: "task-running-newer",
+      agentSlug: "coder",
+      description: "Stream logs",
+      status: "running",
+      startedAt: 250,
+      originChannel: "telegram",
+    },
     {
       taskId: "task-running",
       agentSlug: "coder",
@@ -72,7 +80,15 @@ test("buildAgentStatusRoster returns the full registered roster with current and
       name: "Coder",
       description: "Writes code",
       model: "gpt-5.4",
-      currentTask: {
+      runningTasks: [{
+        taskId: "task-running-newer",
+        description: "Stream logs",
+        status: "running",
+        result: undefined,
+        startedAt: 250,
+        completedAt: undefined,
+        originChannel: "telegram",
+      }, {
         taskId: "task-running",
         description: "Implement endpoint",
         status: "running",
@@ -80,7 +96,7 @@ test("buildAgentStatusRoster returns the full registered roster with current and
         startedAt: 200,
         completedAt: undefined,
         originChannel: "web",
-      },
+      }],
       recentTasks: [{
         taskId: "task-completed",
         description: "Old completed task",
@@ -96,7 +112,7 @@ test("buildAgentStatusRoster returns the full registered roster with current and
       name: "Reviewer",
       description: "Reviews code",
       model: "claude-sonnet-4.6",
-      currentTask: null,
+      runningTasks: [],
       recentTasks: [{
         taskId: "task-error",
         description: "Review PR",

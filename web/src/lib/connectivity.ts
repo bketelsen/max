@@ -13,6 +13,7 @@ export type ConnectionUiSnapshot = {
 export const RECONNECT_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
 export const CONNECTION_LOST_SUFFIX = " ⚠️ [connection lost]";
 export const STALE_CONNECTION_THRESHOLD_MS = 45_000;
+export const REACTIVATION_COOLDOWN_MS = 1_000;
 
 type RedirectLikeResponse = Pick<Response, "ok" | "status" | "type">;
 type Listener = () => void;
@@ -56,23 +57,38 @@ export function appendConnectionLostMarker(text: string): string {
 }
 
 export function registerAppReactivationListeners({
+  cooldownMs = REACTIVATION_COOLDOWN_MS,
   document,
+  now = () => Date.now(),
   onReactivate,
   window,
 }: {
+  cooldownMs?: number;
   document: VisibilityTarget;
+  now?: () => number;
   onReactivate: (source: ReactivationSource) => void;
   window: EventTargetLike;
 }): () => void {
+  let lastReactivationAt = Number.NEGATIVE_INFINITY;
+  const notifyReactivate = (source: ReactivationSource) => {
+    const currentTime = now();
+    if (currentTime - lastReactivationAt < cooldownMs) {
+      return;
+    }
+
+    lastReactivationAt = currentTime;
+    onReactivate(source);
+  };
+
   const handleVisibilityChange = () => {
     if (document.visibilityState !== "visible") {
       return;
     }
 
-    onReactivate("visibilitychange");
+    notifyReactivate("visibilitychange");
   };
-  const handlePageShow = () => onReactivate("pageshow");
-  const handleFocus = () => onReactivate("focus");
+  const handlePageShow = () => notifyReactivate("pageshow");
+  const handleFocus = () => notifyReactivate("focus");
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pageshow", handlePageShow);
@@ -108,6 +124,28 @@ export function shouldReconnectOnReactivation({
 
   if (lastActivityAt === null) {
     return true;
+  }
+
+  return now - lastActivityAt >= staleAfterMs;
+}
+
+export function shouldRestoreHistoryOnReactivation({
+  cachedMessageCount,
+  lastActivityAt,
+  now,
+  staleAfterMs = STALE_CONNECTION_THRESHOLD_MS,
+}: {
+  cachedMessageCount: number;
+  lastActivityAt: number | null;
+  now: number;
+  staleAfterMs?: number;
+}): boolean {
+  if (cachedMessageCount === 0) {
+    return true;
+  }
+
+  if (lastActivityAt === null) {
+    return false;
   }
 
   return now - lastActivityAt >= staleAfterMs;

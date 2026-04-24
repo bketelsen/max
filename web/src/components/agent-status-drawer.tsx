@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
-import { AlertCircleIcon, RefreshCwIcon } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { AlertCircleIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import type { ApiClient } from "@/lib/api-client";
 import {
   deriveAgentBadgeState,
   fetchAgentStatuses,
+  getAgentStatusDisplayTasks,
   type AgentStatusInfo,
   type AgentTaskSummary,
 } from "@/lib/agent-status";
@@ -63,8 +64,18 @@ function getTaskMeta(task: AgentTaskSummary | null): string {
   return parts.join(" · ");
 }
 
-function AgentStatusCard({ agent }: { agent: AgentStatusInfo }) {
+export function AgentStatusCard({ agent }: { agent: AgentStatusInfo }) {
   const badge = deriveAgentBadgeState(agent);
+  const tasks = useMemo(() => getAgentStatusDisplayTasks(agent), [agent]);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
+
+  const toggleTask = useCallback((taskId: string) => {
+    setExpandedTaskIds((currentTaskIds) =>
+      currentTaskIds.includes(taskId)
+        ? currentTaskIds.filter((currentTaskId) => currentTaskId !== taskId)
+        : [...currentTaskIds, taskId]
+    );
+  }, []);
 
   return (
     <div className="space-y-3 rounded-xl border bg-card/70 p-4 shadow-xs">
@@ -83,17 +94,76 @@ function AgentStatusCard({ agent }: { agent: AgentStatusInfo }) {
         </Badge>
       </div>
 
-      <div className="space-y-1 rounded-lg bg-muted/50 p-3">
-        <p className="text-sm font-medium">
-          {badge.task?.description ?? "No recent activity"}
-        </p>
-        <p className="text-xs text-muted-foreground">{getTaskMeta(badge.task)}</p>
-        {badge.task?.result ? (
-          <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
-            {badge.task.result}
-          </p>
-        ) : null}
-      </div>
+      {tasks.length > 0 ? (
+        <div className="space-y-2">
+          {tasks.map((task) => {
+            const expanded = expandedTaskIds.includes(task.taskId);
+
+            return (
+              <div key={task.taskId} className="overflow-hidden rounded-lg border bg-muted/35">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="flex h-auto w-full items-start justify-between gap-3 rounded-none px-3 py-3 text-left"
+                  aria-expanded={expanded}
+                  onClick={() => toggleTask(task.taskId)}
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{task.description}</p>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] font-normal",
+                          task.status === "running"
+                            ? badgeToneClassNames.running
+                            : task.status === "completed"
+                              ? badgeToneClassNames.succeeded
+                              : badgeToneClassNames.failed
+                        )}
+                      >
+                        {task.status === "running"
+                          ? "Running"
+                          : task.status === "completed"
+                            ? "Completed"
+                            : "Failed"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{getTaskMeta(task)}</p>
+                  </div>
+                  <ChevronDownIcon
+                    className={cn(
+                      "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
+                      expanded && "rotate-180"
+                    )}
+                  />
+                </Button>
+
+                {expanded ? (
+                  <div className="border-t px-3 py-3">
+                    {task.result ? (
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                        {task.result}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {task.status === "running"
+                          ? "Task is still in progress."
+                          : "No additional task details were recorded."}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-1 rounded-lg bg-muted/50 p-3">
+          <p className="text-sm font-medium">No recent activity</p>
+          <p className="text-xs text-muted-foreground">No runs yet.</p>
+        </div>
+      )}
     </div>
   );
 }

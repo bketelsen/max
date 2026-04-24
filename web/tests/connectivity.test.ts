@@ -11,6 +11,7 @@ import {
   getReconnectDelay,
   registerAppReactivationListeners,
   shouldReconnectOnReactivation,
+  shouldRestoreHistoryOnReactivation,
 } from "../src/lib/connectivity.ts";
 
 function createEventTarget() {
@@ -121,6 +122,7 @@ test("app reactivation listeners fire for visible resume signals only", () => {
   const windowTarget = createEventTarget();
   let visibilityState: "hidden" | "visible" = "hidden";
   const triggers: string[] = [];
+  let now = 1_000;
 
   const cleanup = registerAppReactivationListeners({
     document: {
@@ -130,6 +132,7 @@ test("app reactivation listeners fire for visible resume signals only", () => {
         return visibilityState;
       },
     },
+    now: () => now,
     onReactivate: (source) => triggers.push(source),
     window: windowTarget,
   });
@@ -137,12 +140,46 @@ test("app reactivation listeners fire for visible resume signals only", () => {
   documentTarget.dispatch("visibilitychange");
   visibilityState = "visible";
   documentTarget.dispatch("visibilitychange");
+  now += 1_500;
   windowTarget.dispatch("pageshow");
+  now += 1_500;
   windowTarget.dispatch("focus");
   cleanup();
   windowTarget.dispatch("focus");
 
   assert.deepEqual(triggers, ["visibilitychange", "pageshow", "focus"]);
+});
+
+test("app reactivation listeners coalesce duplicate resume signals from the same tab activation", () => {
+  const documentTarget = createEventTarget();
+  const windowTarget = createEventTarget();
+  let visibilityState: "hidden" | "visible" = "hidden";
+  const triggers: string[] = [];
+  let now = 1_000;
+
+  registerAppReactivationListeners({
+    document: {
+      addEventListener: documentTarget.addEventListener,
+      removeEventListener: documentTarget.removeEventListener,
+      get visibilityState() {
+        return visibilityState;
+      },
+    },
+    onReactivate: (source) => triggers.push(source),
+    window: windowTarget,
+    now: () => now,
+  });
+
+  visibilityState = "visible";
+  documentTarget.dispatch("visibilitychange");
+  now += 100;
+  windowTarget.dispatch("pageshow");
+  now += 100;
+  windowTarget.dispatch("focus");
+  now += 2_000;
+  windowTarget.dispatch("focus");
+
+  assert.deepEqual(triggers, ["visibilitychange", "focus"]);
 });
 
 test("reactivation reconnects when the stream is missing or stale", () => {
@@ -183,6 +220,43 @@ test("reactivation reconnects when the stream is missing or stale", () => {
       now,
     }),
     false
+  );
+});
+
+test("reactivation only restores history when local state is empty or stale", () => {
+  const now = 120_000;
+
+  assert.equal(
+    shouldRestoreHistoryOnReactivation({
+      cachedMessageCount: 0,
+      lastActivityAt: null,
+      now,
+    }),
+    true
+  );
+  assert.equal(
+    shouldRestoreHistoryOnReactivation({
+      cachedMessageCount: 4,
+      lastActivityAt: null,
+      now,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRestoreHistoryOnReactivation({
+      cachedMessageCount: 4,
+      lastActivityAt: now - STALE_CONNECTION_THRESHOLD_MS + 1,
+      now,
+    }),
+    false
+  );
+  assert.equal(
+    shouldRestoreHistoryOnReactivation({
+      cachedMessageCount: 4,
+      lastActivityAt: now - STALE_CONNECTION_THRESHOLD_MS - 1,
+      now,
+    }),
+    true
   );
 });
 

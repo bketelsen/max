@@ -12,6 +12,7 @@ import {
   getReconnectDelay,
   registerAppReactivationListeners,
   shouldReconnectOnReactivation,
+  shouldRestoreHistoryOnReactivation,
 } from "@/lib/connectivity";
 import { openSseStream } from "@/lib/sse";
 
@@ -47,8 +48,10 @@ export function useMaxChat() {
 
   const lastActivityAtRef = useRef<number | null>(null);
   const lastReconnectRequestAtRef = useRef(0);
+  const messagesRef = useRef(messages);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoreRequestRef = useRef<Promise<void> | null>(null);
   const tokenRef = useRef<string | null>(null);
   const connectionIdRef = useRef<string | null>(null);
   // Whether the next "message" SSE event is a reply to a user turn
@@ -56,6 +59,8 @@ export function useMaxChat() {
   const expectingResponseRef = useRef(false);
 
   useEffect(() => {
+    messagesRef.current = messages;
+
     if (typeof window === "undefined") {
       return;
     }
@@ -146,26 +151,53 @@ export function useMaxChat() {
 
   const apiClient = useMemo(() => createApiClient(token), [token]);
 
-  const restoreRecentMessages = useCallback(async () => {
-    setRestoringHistory(true);
-
-    try {
-      const restored = await apiClient.get<UIMessage[]>(
-        `/history?limit=${HYDRATED_MESSAGE_LIMIT}`
-      );
-
-      setMessages((prev) =>
-        resolveRestoredMessages({
-          cachedMessages: prev,
-          historyMessages: restored,
+  const restoreRecentMessages = useCallback(
+    async ({
+      reason = "startup",
+    }: {
+      reason?: "reactivation" | "startup";
+    } = {}) => {
+      if (
+        reason === "reactivation" &&
+        !shouldRestoreHistoryOnReactivation({
+          cachedMessageCount: messagesRef.current.length,
+          lastActivityAt: lastActivityAtRef.current,
+          now: Date.now(),
         })
-      );
-    } catch (err) {
-      console.error("[max] history restore failed:", err);
-    } finally {
-      setRestoringHistory(false);
-    }
-  }, [apiClient]);
+      ) {
+        return;
+      }
+
+      if (restoreRequestRef.current) {
+        return restoreRequestRef.current;
+      }
+
+      setRestoringHistory(true);
+      const request = (async () => {
+        try {
+          const restored = await apiClient.get<UIMessage[]>(
+            `/history?limit=${HYDRATED_MESSAGE_LIMIT}`
+          );
+
+          setMessages((prev) =>
+            resolveRestoredMessages({
+              cachedMessages: prev,
+              historyMessages: restored,
+            })
+          );
+        } catch (err) {
+          console.error("[max] history restore failed:", err);
+        } finally {
+          restoreRequestRef.current = null;
+          setRestoringHistory(false);
+        }
+      })();
+
+      restoreRequestRef.current = request;
+      return request;
+    },
+    [apiClient]
+  );
 
   const handleEvent = useCallback((evt: MaxSseEvent) => {
     if (evt.type === "connected") {
@@ -220,7 +252,7 @@ export function useMaxChat() {
     return registerAppReactivationListeners({
       document,
       onReactivate: () => {
-        void restoreRecentMessages();
+        void restoreRecentMessages({ reason: "reactivation" });
 
         if (
           !shouldReconnectOnReactivation({
@@ -241,7 +273,7 @@ export function useMaxChat() {
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
-      void restoreRecentMessages();
+      void restoreRecentMessages({ reason: "startup" });
     }, 0);
 
     return () => {

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   deriveAgentBadgeState,
   fetchAgentStatuses,
+  getAgentStatusDisplayTasks,
   type AgentStatusInfo,
 } from "../src/lib/agent-status.ts";
 
@@ -13,21 +14,29 @@ function createAgentStatus(overrides: Partial<AgentStatusInfo> = {}): AgentStatu
     name: "Coder",
     description: "Writes code",
     model: "gpt-5.4",
-    currentTask: null,
+    runningTasks: [],
     recentTasks: [],
     ...overrides,
   };
 }
 
-test("deriveAgentBadgeState prefers the current running task", () => {
+test("deriveAgentBadgeState prefers the most recent running task", () => {
   const state = deriveAgentBadgeState(
     createAgentStatus({
-      currentTask: {
-        taskId: "task-1",
-        description: "Implement drawer",
-        status: "running",
-        startedAt: 200,
-      },
+      runningTasks: [
+        {
+          taskId: "task-1",
+          description: "Implement drawer",
+          status: "running",
+          startedAt: 200,
+        },
+        {
+          taskId: "task-2",
+          description: "Handle refresh",
+          status: "running",
+          startedAt: 240,
+        },
+      ],
       recentTasks: [
         {
           taskId: "task-0",
@@ -44,12 +53,75 @@ test("deriveAgentBadgeState prefers the current running task", () => {
     tone: "running",
     label: "Running",
     task: {
-      taskId: "task-1",
-      description: "Implement drawer",
+      taskId: "task-2",
+      description: "Handle refresh",
       status: "running",
-      startedAt: 200,
+      startedAt: 240,
     },
   });
+});
+
+test("getAgentStatusDisplayTasks returns all running tasks in newest-first order", () => {
+  const tasks = getAgentStatusDisplayTasks(
+    createAgentStatus({
+      runningTasks: [
+        {
+          taskId: "task-1",
+          description: "Implement drawer",
+          status: "running",
+          startedAt: 200,
+        },
+        {
+          taskId: "task-2",
+          description: "Handle refresh",
+          status: "running",
+          startedAt: 240,
+        },
+      ],
+      recentTasks: [
+        {
+          taskId: "task-old",
+          description: "Older completion",
+          status: "completed",
+          startedAt: 100,
+          completedAt: 150,
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    tasks.map((task) => task.taskId),
+    ["task-2", "task-1"]
+  );
+});
+
+test("getAgentStatusDisplayTasks falls back to the latest recent task when idle", () => {
+  const tasks = getAgentStatusDisplayTasks(
+    createAgentStatus({
+      recentTasks: [
+        {
+          taskId: "task-old",
+          description: "Older completion",
+          status: "completed",
+          startedAt: 100,
+          completedAt: 150,
+        },
+        {
+          taskId: "task-new",
+          description: "Latest failure",
+          status: "error",
+          startedAt: 200,
+          completedAt: 260,
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    tasks.map((task) => task.taskId),
+    ["task-new"]
+  );
 });
 
 test("deriveAgentBadgeState falls back to the most recent completed task", () => {

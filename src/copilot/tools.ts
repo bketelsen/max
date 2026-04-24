@@ -444,6 +444,24 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
       },
     }),
 
+    defineTool("send_telegram", {
+      description:
+        "Send a message to the user on Telegram. Use this to notify the user of important events, " +
+        "task completions, or proactive updates. The message will be delivered to their authorized Telegram account.",
+      parameters: z.object({
+        message: z.string().describe("The message to send. Supports Markdown formatting."),
+      }),
+      handler: async ({ message }) => {
+        if (!config.telegramEnabled) {
+          return "Telegram not configured; skipped sending message.";
+        }
+
+        const { sendProactiveMessage } = await import("../telegram/bot.js");
+        await sendProactiveMessage(message);
+        return "Message sent to Telegram";
+      },
+    }),
+
 
     defineTool("restart_max", {
       description:
