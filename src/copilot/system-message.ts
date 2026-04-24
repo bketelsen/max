@@ -34,9 +34,14 @@ function loadSystemCore(): string {
   return readText(BUNDLED_SYSTEM_MD);
 }
 
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max).trimEnd() + `\n… [truncated at ${max} chars]`;
+function truncate(text: string, max: number): { text: string; truncated: boolean } {
+  if (text.length <= max) {
+    return { text, truncated: false };
+  }
+  return {
+    text: text.slice(0, max).trimEnd() + `\n… [truncated at ${max} chars]`,
+    truncated: true,
+  };
 }
 
 function fileFresh(path: string, maxAgeMs: number): boolean {
@@ -60,10 +65,25 @@ export function getCogStartupContext(): string {
     if (freshnessMs !== undefined && !fileFresh(path, freshnessMs)) return;
     const raw = readText(path).trim();
     if (!raw) return;
-    const body = truncate(raw, Math.min(L0_PER_FILE_CAP, budget));
+    const maxChars = Math.min(L0_PER_FILE_CAP, budget);
+    if (maxChars <= 0) {
+      console.warn(`[memory] L0 section '${title}' dropped: no remaining budget.`);
+      return;
+    }
+    const { text: body, truncated } = truncate(raw, maxChars);
+    if (truncated) {
+      console.warn(
+        `[memory] L0 section '${title}' truncated from ${raw.length} to ${maxChars} chars (${path}).`
+      );
+    }
     if (body.length === 0) return;
     const block = `### ${title}\n\n${body}`;
-    if (block.length > budget) return;
+    if (block.length > budget) {
+      console.warn(
+        `[memory] L0 section '${title}' dropped: block length ${block.length} exceeds remaining budget ${budget} (${path}).`
+      );
+      return;
+    }
     sections.push(block);
     budget -= block.length + 2;
   }
@@ -74,7 +94,7 @@ export function getCogStartupContext(): string {
   addSection("Domains", COG_DOMAINS_PATH);
 
   if (sections.length === 0) return "";
-  return `\n## Current L0 Memory\n\n_Injected by the daemon at session creation. Derived from \`~/.max/cog/memory/\`._\n\n${sections.join("\n\n")}\n`;
+  return `\n## Current L0 Memory\n\n_Injected by the daemon from \`~/.max/cog/memory/\` and refreshed when the orchestrator session is recreated._\n\n${sections.join("\n\n")}\n`;
 }
 
 function buildMaxRuntimeBlock(): string {

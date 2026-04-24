@@ -14,6 +14,9 @@ export const ENV_PATH = join(MAX_HOME, ".env");
 /** Path to user-local skills */
 export const SKILLS_DIR = join(MAX_HOME, "skills");
 
+/** Deduplicated runtime skill root materialized from bundled/local/global sources */
+export const RESOLVED_SKILLS_DIR = join(MAX_HOME, "resolved-skills");
+
 /** Path to Max's isolated session state (keeps CLI history clean) */
 export const SESSIONS_DIR = join(MAX_HOME, "sessions");
 

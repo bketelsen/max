@@ -11,7 +11,7 @@ import { checkForUpdate } from "./update.js";
 import { ensureCogStructure } from "./cog/fs.js";
 import { migrateWikiToCog } from "./cog/migrate.js";
 import { startCogScheduler, stopCogScheduler } from "./cog/scheduler.js";
-import { invalidateSessionIfBundleChanged } from "./cog/fingerprint.js";
+import { invalidateSessionIfOrchestratorPromptChanged } from "./cog/fingerprint.js";
 import { SESSIONS_DIR } from "./paths.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -86,11 +86,11 @@ async function main(): Promise<void> {
     console.log("[max] Archived legacy ~/.max/wiki/ into ~/.max/cog/sources/wiki-archive/");
   }
 
-  // If bundled skills or the system prompt changed since the persisted session
-  // was created, force a fresh orchestrator session so new skills land in
-  // <available_skills>. Copilot SDK bakes the skill list in at create time.
-  if (invalidateSessionIfBundleChanged()) {
-    console.log("[max] Bundled skills or system prompt changed — forcing a fresh orchestrator session");
+  // If any orchestrator prompt/session-shaping input changed since the persisted
+  // session was created, force a fresh session so new skills, agents, and L0
+  // memory land in the next createSession.
+  if (invalidateSessionIfOrchestratorPromptChanged()) {
+    console.log("[max] Orchestrator prompt inputs changed — forcing a fresh orchestrator session");
   }
 
   // Prune orphaned session folders older than 7 days

@@ -1,8 +1,8 @@
-import { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
+import { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync, rmSync, cpSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
-import { SKILLS_DIR } from "../paths.js";
+import { RESOLVED_SKILLS_DIR, SKILLS_DIR } from "../paths.js";
 
 /** User-local skills directory (~/.max/skills/) */
 const LOCAL_SKILLS_DIR = SKILLS_DIR;
@@ -18,13 +18,43 @@ const BUNDLED_SKILLS_DIR = join(
   "skills"
 );
 
+interface SkillDirectoryOptions {
+  bundledDir?: string;
+  localDir?: string;
+  globalDir?: string;
+  resolvedDir?: string;
+  logger?: Pick<Console, "warn">;
+}
+
 /** Returns all skill directories that exist on disk. */
-export function getSkillDirectories(): string[] {
-  const dirs: string[] = [];
-  if (existsSync(BUNDLED_SKILLS_DIR)) dirs.push(BUNDLED_SKILLS_DIR);
-  if (existsSync(LOCAL_SKILLS_DIR)) dirs.push(LOCAL_SKILLS_DIR);
-  if (existsSync(GLOBAL_SKILLS_DIR)) dirs.push(GLOBAL_SKILLS_DIR);
-  return dirs;
+export function getSkillDirectories(options: SkillDirectoryOptions = {}): string[] {
+  const skills = collectSkills(options);
+  if (skills.length === 0) return [];
+
+  const resolvedDir = options.resolvedDir ?? RESOLVED_SKILLS_DIR;
+  mkdirSync(resolvedDir, { recursive: true });
+
+  const expectedSlugs = new Set(skills.map((skill) => skill.slug));
+  let existingEntries: string[] = [];
+  try {
+    existingEntries = readdirSync(resolvedDir);
+  } catch {
+    existingEntries = [];
+  }
+
+  for (const entry of existingEntries) {
+    if (!expectedSlugs.has(entry)) {
+      rmSync(join(resolvedDir, entry), { recursive: true, force: true });
+    }
+  }
+
+  for (const skill of skills) {
+    const destination = join(resolvedDir, skill.slug);
+    rmSync(destination, { recursive: true, force: true });
+    cpSync(skill.directory, destination, { recursive: true });
+  }
+
+  return [resolvedDir];
 }
 
 export interface SkillInfo {
@@ -35,52 +65,20 @@ export interface SkillInfo {
   source: "bundled" | "local" | "global";
 }
 
+interface SkillSourceDirectory {
+  directory: string;
+  source: SkillInfo["source"];
+}
+
+const SOURCE_PRECEDENCE: Record<SkillInfo["source"], number> = {
+  bundled: 0,
+  global: 1,
+  local: 2,
+};
+
 /** Scan all skill directories and return metadata for each skill found. */
-export function listSkills(): SkillInfo[] {
-  const skills: SkillInfo[] = [];
-
-  for (const [dir, source] of [
-    [BUNDLED_SKILLS_DIR, "bundled"] as const,
-    [LOCAL_SKILLS_DIR, "local"] as const,
-    [GLOBAL_SKILLS_DIR, "global"] as const,
-  ]) {
-    if (!existsSync(dir)) continue;
-
-    let entries: string[];
-    try {
-      entries = readdirSync(dir);
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const skillDir = join(dir, entry);
-      const skillMd = join(skillDir, "SKILL.md");
-      if (!existsSync(skillMd)) continue;
-
-      try {
-        const content = readFileSync(skillMd, "utf-8");
-        const { name, description } = parseFrontmatter(content);
-        skills.push({
-          slug: entry,
-          name: name || entry,
-          description: description || "(no description)",
-          directory: skillDir,
-          source,
-        });
-      } catch {
-        skills.push({
-          slug: entry,
-          name: entry,
-          description: "(could not read SKILL.md)",
-          directory: skillDir,
-          source,
-        });
-      }
-    }
-  }
-
-  return skills;
+export function listSkills(options: SkillDirectoryOptions = {}): SkillInfo[] {
+  return collectSkills(options);
 }
 
 /** Create a new skill in the local skills directory. */
@@ -147,4 +145,76 @@ function parseFrontmatter(content: string): { name: string; description: string 
   }
 
   return { name, description };
+}
+
+function collectSkills(options: SkillDirectoryOptions): SkillInfo[] {
+  const skillsBySlug = new Map<string, SkillInfo>();
+
+  for (const sourceDir of getSkillSourceDirectories(options)) {
+    for (const skill of readSkillsFromDirectory(sourceDir)) {
+      const existing = skillsBySlug.get(skill.slug);
+      if (!existing || SOURCE_PRECEDENCE[skill.source] >= SOURCE_PRECEDENCE[existing.source]) {
+        skillsBySlug.set(skill.slug, skill);
+      }
+    }
+  }
+
+  return Array.from(skillsBySlug.values());
+}
+
+function getSkillSourceDirectories(options: SkillDirectoryOptions): SkillSourceDirectory[] {
+  const dirs: SkillSourceDirectory[] = [];
+  const bundledDir = options.bundledDir ?? BUNDLED_SKILLS_DIR;
+  const localDir = options.localDir ?? LOCAL_SKILLS_DIR;
+  const globalDir = options.globalDir ?? GLOBAL_SKILLS_DIR;
+  const logger = options.logger ?? console;
+
+  if (existsSync(bundledDir)) {
+    dirs.push({ directory: bundledDir, source: "bundled" });
+  } else {
+    logger.warn(`[skills] Bundled skills directory not found: ${bundledDir}`);
+  }
+
+  if (existsSync(globalDir)) dirs.push({ directory: globalDir, source: "global" });
+  if (existsSync(localDir)) dirs.push({ directory: localDir, source: "local" });
+
+  return dirs;
+}
+
+function readSkillsFromDirectory(sourceDir: SkillSourceDirectory): SkillInfo[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(sourceDir.directory);
+  } catch {
+    return [];
+  }
+
+  const skills: SkillInfo[] = [];
+  for (const entry of entries) {
+    const skillDir = join(sourceDir.directory, entry);
+    const skillMd = join(skillDir, "SKILL.md");
+    if (!existsSync(skillMd)) continue;
+
+    try {
+      const content = readFileSync(skillMd, "utf-8");
+      const { name, description } = parseFrontmatter(content);
+      skills.push({
+        slug: entry,
+        name: name || entry,
+        description: description || "(no description)",
+        directory: skillDir,
+        source: sourceDir.source,
+      });
+    } catch {
+      skills.push({
+        slug: entry,
+        name: entry,
+        description: "(could not read SKILL.md)",
+        directory: skillDir,
+        source: sourceDir.source,
+      });
+    }
+  }
+
+  return skills;
 }

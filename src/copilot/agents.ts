@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import { z } from "zod";
 import { approveAll, type CopilotClient, type CopilotSession, type Tool } from "@github/copilot-sdk";
 import { AGENTS_DIR, SESSIONS_DIR } from "../paths.js";
-import { getState, setState } from "../store/db.js";
+import { getDb, getState, setState } from "../store/db.js";
 import { loadMcpConfig } from "./mcp-config.js";
 import { getSkillDirectories } from "./skills.js";
 
@@ -62,6 +62,11 @@ interface BuildEphemeralSessionRequestOptions {
   modelOverride?: string;
 }
 
+interface EnsureDefaultAgentsOptions {
+  bundledDir?: string;
+  logger?: Pick<Console, "warn">;
+}
+
 // Frontmatter schema
 const agentFrontmatterSchema = z.object({
   name: z.string().min(1),
@@ -96,35 +101,7 @@ export function parseAgentMd(content: string, slug: string): AgentConfig | null 
 
   const frontmatterRaw = fmMatch[1];
   const body = fmMatch[2].trim();
-
-  // Simple YAML parser for flat + array values
-  const parsed: Record<string, unknown> = {};
-  for (const line of frontmatterRaw.split("\n")) {
-    const idx = line.indexOf(": ");
-    if (idx <= 0) continue;
-    const key = line.slice(0, idx).trim();
-    let value: unknown = line.slice(idx + 2).trim();
-
-    // Handle YAML quoted strings
-    if (typeof value === "string" && value.startsWith('"') && value.endsWith('"')) {
-      value = value.slice(1, -1);
-    }
-    parsed[key] = value;
-  }
-
-  // Parse arrays from YAML inline syntax: [a, b, c]
-  for (const key of ["skills", "tools", "mcpServers"]) {
-    const raw = parsed[key];
-    if (typeof raw === "string") {
-      const arrMatch = raw.match(/^\[(.*)\]$/);
-      if (arrMatch) {
-        parsed[key] = arrMatch[1]
-          .split(",")
-          .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
-          .filter(Boolean);
-      }
-    }
-  }
+  const parsed = parseAgentFrontmatter(frontmatterRaw);
 
   const result = agentFrontmatterSchema.safeParse(parsed);
   if (!result.success) {
@@ -196,20 +173,26 @@ export function resolveAgentModel(agent: AgentConfig, modelOverride?: string): s
 
 /** Copy bundled agents to ~/.max/agents/, updating stale copies when the bundled version changes.
  *  Respects user customizations: if the user edited the deployed file after our last sync, we skip it. */
-export function ensureDefaultAgents(): void {
+export function ensureDefaultAgents(options: EnsureDefaultAgentsOptions = {}): void {
   mkdirSync(AGENTS_DIR, { recursive: true });
 
-  if (!existsSync(BUNDLED_AGENTS_DIR)) return;
+  const bundledDir = options.bundledDir ?? BUNDLED_AGENTS_DIR;
+  const logger = options.logger ?? console;
+
+  if (!existsSync(bundledDir)) {
+    logger.warn(`[agents] Bundled agents directory not found: ${bundledDir}`);
+    return;
+  }
 
   let bundled: string[];
   try {
-    bundled = readdirSync(BUNDLED_AGENTS_DIR).filter((f) => f.endsWith(".agent.md"));
+    bundled = readdirSync(bundledDir).filter((f) => f.endsWith(".agent.md"));
   } catch {
     return;
   }
 
   for (const file of bundled) {
-    const src = join(BUNDLED_AGENTS_DIR, file);
+    const src = join(bundledDir, file);
     const dest = join(AGENTS_DIR, file);
     const srcHash = createHash("sha256").update(readFileSync(src)).digest("hex");
     const stateKey = `bundled_agent_hash:${file}`;
@@ -239,6 +222,62 @@ export function ensureDefaultAgents(): void {
     setState(stateKey, srcHash);
     console.log(`[agents] Updated bundled agent: ${file}`);
   }
+}
+
+function parseAgentFrontmatter(frontmatterRaw: string): Record<string, unknown> {
+  const parsed: Record<string, unknown> = {};
+  const lines = frontmatterRaw.split("\n");
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const match = line.match(/^([^:#][^:]*):(.*)$/);
+    if (!match) continue;
+
+    const key = match[1].trim();
+    const rawValue = match[2].trim();
+
+    if (rawValue.length === 0) {
+      const items: string[] = [];
+      let nextIndex = index + 1;
+
+      while (nextIndex < lines.length) {
+        const itemMatch = lines[nextIndex].match(/^\s*-\s+(.*)$/);
+        if (!itemMatch) break;
+        items.push(stripYamlQuotes(itemMatch[1].trim()));
+        nextIndex++;
+      }
+
+      if (items.length > 0) {
+        parsed[key] = items;
+        index = nextIndex - 1;
+      }
+      continue;
+    }
+
+    const inlineArray = rawValue.match(/^\[(.*)\]$/);
+    if (inlineArray) {
+      parsed[key] = inlineArray[1]
+        .split(",")
+        .map((value) => stripYamlQuotes(value.trim()))
+        .filter(Boolean);
+      continue;
+    }
+
+    parsed[key] = stripYamlQuotes(rawValue);
+  }
+
+  return parsed;
+}
+
+function stripYamlQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
 }
 
 /** Create a new agent .md file. Returns error string or null on success. */
@@ -489,6 +528,20 @@ export async function createEphemeralAgentSession(
 export async function clearActiveTasks(): Promise<void> {
   activeTasks.clear();
   recentTasksByAgent.clear();
+}
+
+/** Remove all runtime and persisted task/session state for an agent. */
+export function clearAgentState(slug: string): void {
+  for (const [taskId, task] of activeTasks.entries()) {
+    if (task.agentSlug === slug) {
+      activeTasks.delete(taskId);
+    }
+  }
+  recentTasksByAgent.delete(slug);
+
+  const db = getDb();
+  db.prepare(`DELETE FROM agent_tasks WHERE agent_slug = ?`).run(slug);
+  db.prepare(`DELETE FROM agent_sessions WHERE slug = ?`).run(slug);
 }
 
 /** Get status info for an agent (task info only — no persistent sessions). */

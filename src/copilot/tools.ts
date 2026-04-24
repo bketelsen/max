@@ -13,7 +13,7 @@ import { describeCopilotError } from "./errors.js";
 import {
   getAgentRegistry, getAgent, createEphemeralAgentSession, getAgentSessionStatus,
   getActiveTasks, getTask, registerTask, completeTask, failTask, resolveAgentModel,
-  createAgentFile, removeAgentFile, loadAgents,
+  createAgentFile, removeAgentFile, loadAgents, clearAgentState,
   type AgentConfig, type AgentTaskInfo,
 } from "./agents.js";
 
@@ -70,12 +70,20 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
           try {
             const result = await session.sendAndWait({ prompt: args.task }, timeoutMs);
             const output = result?.data?.content || "No response";
+            if (!getTask(task.taskId)) {
+              console.warn(`[agents] Ignoring completion for cleared task ${task.taskId} (@${agent.slug})`);
+              return;
+            }
             completeTask(task.taskId, output);
             db.prepare(`UPDATE agent_tasks SET status = 'completed', result = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(output.slice(0, 10000), task.taskId);
             deps.onAgentTaskComplete(task.taskId, agent.slug, output);
           } catch (err) {
             const details = describeCopilotError(err);
             console.error(`[agents] Task ${task.taskId} for @${agent.slug} failed: ${details.logMessage}`);
+            if (!getTask(task.taskId)) {
+              console.warn(`[agents] Ignoring failure for cleared task ${task.taskId} (@${agent.slug})`);
+              return;
+            }
             failTask(task.taskId, details.userMessage);
             db.prepare(`UPDATE agent_tasks SET status = 'error', result = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(details.userMessage, task.taskId);
             deps.onAgentTaskComplete(task.taskId, agent.slug, `Error: ${details.userMessage}`);
@@ -207,6 +215,7 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
       handler: async (args) => {
         const err = removeAgentFile(args.slug);
         if (err) return err;
+        clearAgentState(args.slug);
         loadAgents();
         return `Agent @${args.slug} removed.`;
       },

@@ -6,6 +6,7 @@ import { loadMcpConfig } from "./mcp-config.js";
 import { getSkillDirectories } from "./skills.js";
 import { resetClient } from "./client.js";
 import { describeCopilotError, isRecoverableCopilotError } from "./errors.js";
+import { syncPersistedOrchestratorSessionFingerprint } from "../cog/fingerprint.js";
 import { logConversation, getState, setState, deleteState } from "../store/db.js";
 import { SESSIONS_DIR } from "../paths.js";
 import { resolveModel, type Tier, type RouteResult } from "./router.js";
@@ -197,11 +198,29 @@ function startHealthCheck(): void {
   }, HEALTH_CHECK_INTERVAL_MS);
 }
 
+async function refreshOrchestratorSessionIfStale(): Promise<void> {
+  const status = syncPersistedOrchestratorSessionFingerprint();
+  if (status !== "invalidated") return;
+
+  console.log("[max] Orchestrator prompt inputs changed during runtime — recreating session");
+  const staleSession = orchestratorSession;
+  orchestratorSession = undefined;
+  currentSessionModel = undefined;
+
+  if (!staleSession) return;
+  try {
+    await staleSession.destroy();
+  } catch {
+    // best effort — a fresh session will be created on demand
+  }
+}
+
 /** Create or resume the persistent orchestrator session. */
 async function ensureOrchestratorSession(): Promise<CopilotSession> {
-  if (orchestratorSession) return orchestratorSession;
   // Coalesce concurrent callers — wait for an in-flight creation
   if (sessionCreatePromise) return sessionCreatePromise;
+  await refreshOrchestratorSessionIfStale();
+  if (orchestratorSession) return orchestratorSession;
 
   sessionCreatePromise = createOrResumeSession();
   try {
