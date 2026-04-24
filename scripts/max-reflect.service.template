@@ -1,0 +1,15 @@
+[Unit]
+Description=Max Reflection Task — mine conversations and update memory
+After=max.service
+
+[Service]
+Type=oneshot
+ExecStart=__MAX_BIN__ reflect
+WorkingDirectory=__HOME__
+Environment=PATH=__PATH__
+Environment=HOME=__HOME__
+EnvironmentFile=-__ENV_FILE__
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=max-reflect
+TimeoutStartSec=300

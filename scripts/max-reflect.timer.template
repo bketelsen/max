@@ -1,0 +1,11 @@
+[Unit]
+Description=Max Reflection Timer — nightly conversation mining
+Requires=max.service
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

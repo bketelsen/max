@@ -24,23 +24,43 @@ Usage:
   max <command>
 
 Commands:
-  start       Start the Max daemon (Telegram bot + HTTP API)
-  tui         Connect to the daemon via terminal UI
-  setup       Interactive first-run configuration
-  auth        Manage TOTP/Passkey authentication for LAN access
-  service     Install/manage Max as a systemd user service (Linux)
-  update      Check for updates and install the latest version
-  help        Show this help message
+  start          Start the Max daemon (Telegram bot + HTTP API)
+  tui            Connect to the daemon via terminal UI
+  setup          Interactive first-run configuration
+  auth           Manage TOTP/Passkey authentication for LAN access
+  service        Install/manage Max as a systemd user service (Linux)
+  housekeeping   Run memory housekeeping (prune hot-memory, audit links, etc.)
+  reflect        Mine conversations and update memory
+  evolve         Audit memory architecture and propose improvements
+  update         Check for updates and install the latest version
+  help           Show this help message
 
 Flags (start):
   --self-edit Allow Max to modify his own source code (off by default)
 
+Flags (housekeeping):
+  --dry-run   Show what would be done without making changes
+
+Flags (reflect):
+  --dry-run          Show what would be done without making changes
+  --hours <hours>    Hours of history to mine (default: 24)
+
+Flags (evolve):
+  --dry-run   Show what would be done without making changes
+
 Examples:
-  max start              Start the daemon
-  max start --self-edit  Start with self-edit enabled
-  max tui                Open the terminal client
-  max setup              Configure Telegram token and settings
-  max service install    Run Max as an always-on systemd service
+  max start                       Start the daemon
+  max start --self-edit           Start with self-edit enabled
+  max tui                         Open the terminal client
+  max setup                       Configure Telegram token and settings
+  max service install             Run Max as an always-on systemd service
+  max service install-housekeeping Install nightly housekeeping timer
+  max service install-reflect     Install nightly reflection timer
+  max service install-evolve      Install nightly evolve timer (4 AM)
+  max housekeeping --dry-run      Preview housekeeping actions
+  max reflect --dry-run           Preview reflection actions
+  max reflect --hours 48          Reflect on last 48 hours
+  max evolve --dry-run            Preview evolve audit
 `.trim());
 }
 
@@ -69,7 +89,9 @@ switch (command) {
     break;
   }
   case "service": {
-    const { installService, uninstallService, serviceStatus, printServiceHelp } =
+    const { installService, uninstallService, serviceStatus, printServiceHelp,
+            installHousekeepingTimer, uninstallHousekeepingTimer, housekeepingStatus, housekeepingLogs,
+            installReflectTimer, uninstallReflectTimer, reflectStatus, reflectLogs } =
       await import("./service.js");
     const sub = args[1];
     if (sub === "install") {
@@ -78,10 +100,49 @@ switch (command) {
       await uninstallService();
     } else if (sub === "status") {
       await serviceStatus();
+    } else if (sub === "install-housekeeping") {
+      await installHousekeepingTimer();
+    } else if (sub === "uninstall-housekeeping") {
+      await uninstallHousekeepingTimer();
+    } else if (sub === "status-housekeeping") {
+      await housekeepingStatus();
+    } else if (sub === "logs-housekeeping") {
+      await housekeepingLogs();
+    } else if (sub === "install-reflect") {
+      await installReflectTimer();
+    } else if (sub === "uninstall-reflect") {
+      await uninstallReflectTimer();
+    } else if (sub === "status-reflect") {
+      await reflectStatus();
+    } else if (sub === "logs-reflect") {
+      await reflectLogs();
     } else {
       printServiceHelp();
       if (sub) process.exit(1);
     }
+    break;
+  }
+  case "housekeeping": {
+    const { runHousekeeping, printReportSummary } = await import("./housekeeping.js");
+    const dryRun = args.includes("--dry-run");
+    const report = await runHousekeeping({ dryRun });
+    printReportSummary(report, dryRun);
+    break;
+  }
+  case "evolve": {
+    const { runEvolve, printReportSummary: printEvolveSummary } = await import("./skills/evolve.js");
+    const evolveDryRun = args.includes("--dry-run");
+    const evolveReport = await runEvolve(evolveDryRun);
+    printEvolveSummary(evolveReport, evolveDryRun);
+    break;
+  }
+  case "reflect": {
+    const reflectFlags = args.slice(1);
+    const dryRun = reflectFlags.includes("--dry-run");
+    const hoursIdx = reflectFlags.indexOf("--hours");
+    const hours = hoursIdx >= 0 ? parseInt(reflectFlags[hoursIdx + 1] || "24", 10) : 24;
+    const { runReflectionCli } = await import("./reflection.js");
+    await runReflectionCli(dryRun, hours);
     break;
   }
   case "update": {
