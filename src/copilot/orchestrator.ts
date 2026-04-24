@@ -7,7 +7,6 @@ import { getSkillDirectories } from "./skills.js";
 import { resetClient } from "./client.js";
 import { describeCopilotError, isRecoverableCopilotError } from "./errors.js";
 import { logConversation, getState, setState, deleteState } from "../store/db.js";
-import { getWikiSummary } from "../wiki/context.js";
 import { SESSIONS_DIR } from "../paths.js";
 import { resolveModel, type Tier, type RouteResult } from "./router.js";
 import {
@@ -183,7 +182,6 @@ async function ensureOrchestratorSession(): Promise<CopilotSession> {
 async function createOrResumeSession(): Promise<CopilotSession> {
   const client = await ensureClient();
   const { tools, mcpServers, skillDirectories } = getSessionConfig();
-  const memorySummary = getWikiSummary();
 
   const infiniteSessions = {
     enabled: true,
@@ -203,7 +201,6 @@ async function createOrResumeSession(): Promise<CopilotSession> {
         systemMessage: {
           content: getOrchestratorSystemMessage({
             selfEditEnabled: config.selfEditEnabled,
-            memorySummary: memorySummary || undefined,
             agentRoster: buildAgentRoster(),
           }),
         },
@@ -231,7 +228,6 @@ async function createOrResumeSession(): Promise<CopilotSession> {
     systemMessage: {
       content: getOrchestratorSystemMessage({
         selfEditEnabled: config.selfEditEnabled,
-        memorySummary: memorySummary || undefined,
         agentRoster: buildAgentRoster(),
       }),
     },

@@ -7,8 +7,8 @@ import { getAgentStatusRoster } from "../copilot/agents.js";
 import { sendPhoto } from "../telegram/bot.js";
 import { config, persistModel } from "../config.js";
 import { getRouterConfig, updateRouterConfig } from "../copilot/router.js";
-import { searchIndex, parseIndex } from "../wiki/index-manager.js";
-import { readPage, ensureWikiStructure } from "../wiki/fs.js";
+import { readMemoryFile } from "../cog/fs.js";
+import { triggerReflect, triggerHousekeeping, triggerForesight, triggerEvolve, type CogSkillName } from "../cog/scheduler.js";
 import { listSkills, removeSkill } from "../copilot/skills.js";
 import { restartDaemon } from "../daemon.js";
 import { API_TOKEN_PATH, ensureMaxHome } from "../paths.js";
@@ -60,7 +60,7 @@ app.use(express.static(webDist, {
 const API_PATHS = new Set([
   "/status", "/auth/bootstrap", "/message", "/stream", "/cancel",
   "/agents", "/agents/status", "/sessions", "/model", "/models", "/auto", "/history",
-  "/memory", "/skills", "/restart", "/send-photo",
+  "/memory", "/skills", "/restart", "/send-photo", "/cog",
 ]);
 const AUTH_PREFIX = "/auth/";
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -324,18 +324,49 @@ app.post("/auto", (req: Request, res: Response) => {
   res.json(updated);
 });
 
-// List wiki knowledge
+// Snapshot of COG's L0 layer — hot memory, universal patterns, domain list
 app.get("/memory", (_req: Request, res: Response) => {
-  ensureWikiStructure();
-  const entries = parseIndex();
-  const results = entries.map((e) => ({
-    path: e.path,
-    title: e.title,
-    summary: e.summary,
-    tags: e.tags || [],
-    updated: e.updated || "",
-  }));
-  res.json(results);
+  const hot = readMemoryFile("hot-memory.md");
+  const patterns = readMemoryFile("cog-meta/patterns.md");
+  const foresight = readMemoryFile("cog-meta/foresight-nudge.md");
+  const domainsYml = readMemoryFile("domains.yml");
+
+  // Extract domain IDs from domains.yml (simple line scan — no full parser needed)
+  const domains: string[] = [];
+  for (const line of domainsYml.split("\n")) {
+    const m = line.match(/^\s*-\s*id:\s*(\S+)/);
+    if (m) domains.push(m[1]);
+  }
+
+  res.json({
+    hot,
+    patterns,
+    foresight,
+    domains,
+  });
+});
+
+// Admin: force-run one of the scheduler-driven COG pipeline skills.
+// POST /cog/trigger  { skill: "reflect" | "housekeeping" | "foresight" | "evolve", force?: boolean }
+// force defaults to true (the cadence checks exist to pace background runs;
+// an explicit admin call almost always wants to bypass them).
+app.post("/cog/trigger", (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as { skill?: string; force?: unknown };
+  const skill = body.skill as CogSkillName | undefined;
+  const force = body.force === undefined ? true : !!body.force;
+
+  let result;
+  switch (skill) {
+    case "reflect":      result = triggerReflect(force); break;
+    case "housekeeping": result = triggerHousekeeping(force); break;
+    case "foresight":    result = triggerForesight(force); break;
+    case "evolve":       result = triggerEvolve(force); break;
+    default:
+      res.status(400).json({ ok: false, error: `skill must be one of: reflect, housekeeping, foresight, evolve (got: ${JSON.stringify(skill)})` });
+      return;
+  }
+
+  res.status(result.ok ? 200 : 409).json(result);
 });
 
 // List skills

@@ -8,8 +8,10 @@ import { spawn } from "child_process";
 import { readdirSync, statSync, rmSync } from "fs";
 import { join } from "path";
 import { checkForUpdate } from "./update.js";
-import { ensureWikiStructure } from "./wiki/fs.js";
-import { shouldMigrate, migrateMemoriesToWiki, shouldReorganize, reorganizeWiki } from "./wiki/migrate.js";
+import { ensureCogStructure } from "./cog/fs.js";
+import { migrateWikiToCog } from "./cog/migrate.js";
+import { startCogScheduler, stopCogScheduler } from "./cog/scheduler.js";
+import { invalidateSessionIfBundleChanged } from "./cog/fingerprint.js";
 import { SESSIONS_DIR } from "./paths.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -75,20 +77,20 @@ async function main(): Promise<void> {
   getDb();
   console.log("[max] Database initialized");
 
-  // Initialize wiki knowledge base
-  const wikiIsNew = ensureWikiStructure();
-  if (wikiIsNew) {
-    console.log("[max] Created wiki at ~/.max/wiki/");
+  // Initialize COG memory
+  const cogIsNew = ensureCogStructure();
+  if (cogIsNew) {
+    console.log("[max] Created COG memory at ~/.max/cog/");
   }
-  if (shouldMigrate()) {
-    console.log("[max] Migrating SQLite memories to wiki...");
-    const count = migrateMemoriesToWiki();
-    console.log(`[max] Migrated ${count} memories to wiki`);
+  if (migrateWikiToCog()) {
+    console.log("[max] Archived legacy ~/.max/wiki/ into ~/.max/cog/sources/wiki-archive/");
   }
-  if (shouldReorganize()) {
-    console.log("[max] Reorganizing wiki pages into entity structure...");
-    const count = reorganizeWiki();
-    console.log(`[max] Created ${count} entity pages`);
+
+  // If bundled skills or the system prompt changed since the persisted session
+  // was created, force a fresh orchestrator session so new skills land in
+  // <available_skills>. Copilot SDK bakes the skill list in at create time.
+  if (invalidateSessionIfBundleChanged()) {
+    console.log("[max] Bundled skills or system prompt changed — forcing a fresh orchestrator session");
   }
 
   // Prune orphaned session folders older than 7 days
@@ -131,6 +133,9 @@ async function main(): Promise<void> {
   }
 
   console.log("[max] Max is fully operational.");
+
+  // Start COG scheduler (cog-reflect / cog-housekeeping / cog-foresight)
+  startCogScheduler();
 
   // Non-blocking update check
   checkForUpdate()
@@ -181,6 +186,8 @@ async function shutdown(): Promise<void> {
     try { await stopBot(); } catch { /* best effort */ }
   }
 
+  stopCogScheduler();
+
   // Destroy all active agent sessions
   await shutdownAgents();
 
@@ -203,6 +210,8 @@ export async function restartDaemon(): Promise<void> {
     await sendProactiveMessage("Restarting — back in a sec ⏳").catch(() => {});
     try { await stopBot(); } catch { /* best effort */ }
   }
+
+  stopCogScheduler();
 
   // Destroy all active agent sessions
   await shutdownAgents();

@@ -1,5 +1,9 @@
 [Unit]
-Description=Max Reflection Timer — nightly conversation mining
+# Note: the daemon also runs an in-process COG scheduler that fires cog-reflect
+# once new conversation traffic accumulates (see src/cog/scheduler.ts). This
+# timer is redundant with that, but kept for users who prefer wall-clock cron
+# semantics over the scheduler's cursor-based cadence.
+Description=Max Reflection Timer — nightly cog-reflect dispatch via `max reflect` CLI
 Requires=max.service
 
 [Timer]

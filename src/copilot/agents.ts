@@ -361,18 +361,21 @@ function getAgentBasePrompt(): string {
 
 You are an agent within Max, a personal AI assistant for developers. You run on the user's local machine.
 
-### Shared Wiki
-All agents share a wiki knowledge base for persistent memory. Use \`wiki_read\` and \`wiki_search\` to find existing knowledge, and \`wiki_update\` to save important findings.
+### Shared Memory — COG
+All agents share COG, a filesystem-resident memory at \`~/.max/cog/\`. Persona, memory rules, and domain routing live in \`~/.max/cog/SYSTEM.md\`; read it if you need context on how memory is organized. Knowledge lives under \`~/.max/cog/memory/\` — domain files (\`personal/\`, \`work/<job>/\`), universal patterns (\`cog-meta/patterns.md\`), and archives (\`glacier/\`).
+
+Use the built-in \`Read\`, \`Write\`, \`Edit\`, \`Glob\`, and \`Grep\` tools to read and update memory directly — there are no custom memory helpers. Follow the SSOT rule: each fact in one canonical file (\`entities.md\`, \`action-items.md\`, \`calendar.md\`, \`health.md\`); duplicates become \`[[wiki-links]]\`.
 
 ### Communication
-- You receive tasks from @max (the orchestrator) or directly from the user
-- Your results are relayed back to the user by @max
-- To share knowledge with other agents, write to the wiki
+- You receive tasks from @max (the orchestrator) or directly from the user.
+- Your results are relayed back to the user by @max.
+- To share knowledge with other agents, write to the appropriate COG memory file.
 
 ### Guidelines
-- Be thorough but concise in your responses
-- Use the wiki to check for existing context before starting work
-- Save important findings to the wiki for other agents to use
+- Be thorough but concise in your responses.
+- Check COG for existing context before starting work — grep \`<!-- L0:\` headers across \`~/.max/cog/memory/\` to discover relevant files quickly.
+- Save important findings to the canonical SSOT file. Add \`[[wiki-links]]\` from related files.
+- Observations are append-only: \`- YYYY-MM-DD [tags]: <event>\` into the appropriate \`observations.md\`. Never edit past entries.
 `;
 }
 
@@ -404,12 +407,6 @@ export function buildAgentRoster(): string {
     .join("\n");
 }
 
-// The wiki tools that every agent gets regardless of tool config
-const WIKI_TOOL_NAMES = new Set([
-  "wiki_search", "wiki_read", "wiki_update", "remember", "recall", "forget",
-  "wiki_ingest", "wiki_lint", "wiki_rebuild_index",
-]);
-
 // Management tools that only @max should have
 const MANAGEMENT_TOOL_NAMES = new Set([
   "delegate_to_agent", "check_agent_status", "get_agent_result",
@@ -422,8 +419,9 @@ const MANAGEMENT_TOOL_NAMES = new Set([
 /** Filter tools based on agent config. */
 export function filterToolsForAgent(agent: AgentConfig, allTools: Tool<any>[]): Tool<any>[] {
   if (agent.tools && agent.tools.length > 0) {
-    // Agent specifies an explicit allowlist — give those + wiki tools
-    const allowed = new Set([...agent.tools, ...WIKI_TOOL_NAMES]);
+    // Agent specifies an explicit allowlist — honor it verbatim. Memory I/O is
+    // via Copilot's built-in Read/Edit/Write/Grep, not custom tools.
+    const allowed = new Set(agent.tools);
     return allTools.filter((t) => allowed.has(t.name));
   }
 
