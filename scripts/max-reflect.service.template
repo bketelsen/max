@@ -1,6 +1,7 @@
 [Unit]
-Description=Max Reflection Task — mine conversations and update memory
+Description=Max Reflection Task — dispatches cog-reflect via the running daemon (requires max.service)
 After=max.service
+Requires=max.service
 
 [Service]
 Type=oneshot

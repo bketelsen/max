@@ -17,11 +17,6 @@ const configSchema = z.object({
   AUTH_SESSION_TTL: z.string().optional(),
   COPILOT_MODEL: z.string().optional(),
   WORKER_TIMEOUT: z.string().optional(),
-  REFLECT_ENABLED: z.string().optional(),
-  REFLECT_NOTIFY_TELEGRAM: z.string().optional(),
-  REFLECT_NOTIFY_ON_ERROR_ONLY: z.string().optional(),
-  REFLECT_HOURS: z.string().optional(),
-  REFLECT_PATTERN_THRESHOLD: z.string().optional(),
 });
 
 const raw = configSchema.parse(process.env);

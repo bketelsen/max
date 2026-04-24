@@ -2,8 +2,7 @@ import { Bot, type Context } from "grammy";
 import { config, persistModel } from "../config.js";
 import { sendToOrchestrator, cancelCurrentMessage, getAgentInfo, getLastRouteResult } from "../copilot/orchestrator.js";
 import { chunkMessage, toTelegramMarkdown } from "./formatter.js";
-import { parseIndex } from "../wiki/index-manager.js";
-import { ensureWikiStructure } from "../wiki/fs.js";
+import { ensureCogStructure, readMemoryFile } from "../cog/fs.js";
 import { listSkills } from "../copilot/skills.js";
 import { restartDaemon } from "../daemon.js";
 import { getRouterConfig, updateRouterConfig } from "../copilot/router.js";
@@ -172,18 +171,20 @@ export function createBot(): Bot {
     }
   });
   bot.command("memory", async (ctx) => {
-    ensureWikiStructure();
-    const entries = parseIndex();
-    if (entries.length === 0) {
-      await ctx.reply("No wiki pages yet.");
-    } else {
-      const lines = entries.map((e) => {
-        let line = `• ${e.title}: ${e.summary}`;
-        if (e.updated) line += ` (${e.updated})`;
-        return line;
-      });
-      await safeReply(ctx, lines.join("\n") + `\n\n${entries.length} wiki pages total`);
+    ensureCogStructure();
+    const hot = readMemoryFile("hot-memory.md").trim();
+    const domainsYml = readMemoryFile("domains.yml");
+    const domains: string[] = [];
+    for (const line of domainsYml.split("\n")) {
+      const m = line.match(/^\s*-\s*id:\s*(\S+)/);
+      if (m) domains.push(m[1]);
     }
+    const parts = [
+      hot || "_hot-memory.md is empty_",
+      "",
+      `Domains: ${domains.length ? domains.join(", ") : "(none — run cog-setup)"}`,
+    ];
+    await safeReply(ctx, parts.join("\n"));
   });
   bot.command("skills", async (ctx) => {
     const skills = listSkills();

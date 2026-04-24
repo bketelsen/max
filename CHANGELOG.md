@@ -2,6 +2,27 @@
 
 All notable changes to Max are documented here.
 
+## [Unreleased]
+
+### Memory — COG port (replaces the wiki system)
+
+- Replace `~/.max/wiki/` with **COG** ([marciopuga/cog](https://github.com/marciopuga/cog), MIT — see `LICENSE-COG.md`) adapted for the Copilot SDK. Memory now lives at `~/.max/cog/`: `memory/{hot-memory,link-index}.md`, per-domain directories (`personal/`, `work/<job>/`), `memory/cog-meta/` for self-observations and patterns, `memory/glacier/` for archives, and `sources/` for immutable inputs.
+- **Skills-only invocation, no custom memory tools.** The orchestrator and agents read and write memory using Copilot CLI's built-in `Read`/`Write`/`Edit`/`Glob`/`Grep`. `remember`, `recall`, `forget`, `wiki_search`, `wiki_read`, `wiki_update`, `wiki_ingest`, `wiki_lint`, `wiki_rebuild_index` are removed from `src/copilot/tools.ts`.
+- **System prompt is now user-editable** at `~/.max/cog/SYSTEM.md` (bundled default shipped at `src/cog/default-system.md`, copied into place on first run). Persona, domain routing table, SSOT rule, L0/L1/L2 retrieval protocol, file edit patterns, and the glacier schema live there — all editable without touching source.
+- **11 bundled pipeline skills** at `skills/cog-*/` — `cog-reflect` (observation clustering, pattern distillation, thread detection), `cog-housekeeping` (archival, link-index audit, hot-memory pruning), `cog-foresight` (daily strategic nudges), `cog-evolve` (memory-architecture audit), `cog-scenario` (decision branch modeling), `cog-history` (deep recall), `cog-setup` (conversational domain bootstrap), plus `cog-personal`, `cog-explainer`, `cog-humanizer`, `cog-commit`. Each carries a Max runtime adapter header translating upstream Claude-Code references to the Copilot SDK runtime.
+- **In-daemon scheduler** (`src/cog/scheduler.ts`) dispatches `cog-reflect` nightly (>20 h since last + ≥10 new conversation_log rows), `cog-housekeeping` weekly, `cog-foresight` daily (morning). For reflect, the scheduler dumps new `conversation_log` rows to `cog-meta/recent-conversations.md` and advances `cog-meta/reflect-cursor.md` before injecting a `[cog-scheduler]` background prompt into the orchestrator queue.
+- **CLI + systemd compatibility preserved.** `max reflect`, `max housekeeping`, `max evolve` still exist — they are now thin wrappers over `POST /cog/trigger` on the running daemon. The systemd timers from `max service install-*` continue to fire these commands unchanged. `--dry-run` and `--hours N` flags are accepted for back-compat but warn and are ignored (skill-driven execution decides what to change).
+- **Session invalidation when bundled content changes** (`src/cog/fingerprint.ts`). Copilot SDK bakes the skill list into a session at create time; `resumeSession` does not re-discover skills. On each daemon start the bundled skills' + SYSTEM.md's SHA-256 is compared to the last stored fingerprint; on mismatch the saved `orchestrator_session_id` is deleted so the next boot creates a fresh session that picks up the current skill list.
+- **Admin endpoint** `POST /cog/trigger { skill: reflect | housekeeping | foresight | evolve, force?: boolean }` — bearer-token-authed. Default `force: true`. Used by the CLI wrappers; also usable directly via curl for ad-hoc dispatch.
+- **Wiki archive migration.** On first boot, any legacy `~/.max/wiki/` is moved verbatim to `~/.max/cog/sources/wiki-archive/` via a single atomic rename (idempotent, gated by the `cog_wiki_archived` state key). No re-classification; `cog-reflect` surfaces its contents organically over time.
+- **Removed**: `src/wiki/*`, `src/copilot/episode-writer.ts`, `skills/evolve/`, `skills/housekeeping/` (the bare pre-COG versions — `cog-evolve` / `cog-housekeeping` supersede them).
+- **Updated** `/memory` HTTP endpoint and Telegram `/memory` command to return/display COG hot memory, universal patterns, and the domain list from `domains.yml` (previously returned the wiki index).
+
+### Configuration
+
+- Dropped dead env vars: `REFLECT_ENABLED`, `REFLECT_NOTIFY_TELEGRAM`, `REFLECT_NOTIFY_ON_ERROR_ONLY`, `REFLECT_HOURS`, `REFLECT_PATTERN_THRESHOLD`. COG cadence and thresholds are module constants in `src/cog/scheduler.ts`.
+- `.env.example` rewritten — documents `API_BIND` (0.0.0.0 for LAN exposure) and the `AUTH_*` variables that accompany it. Memory section now describes COG instead of wiki.
+
 ## [1.5.0] — 2026-04-22
 
 ### Multi-agent system

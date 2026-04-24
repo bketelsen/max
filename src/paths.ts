@@ -29,14 +29,26 @@ export const API_TOKEN_PATH = join(MAX_HOME, "api-token");
 /** Agent definition files (~/.max/agents/) */
 export const AGENTS_DIR = join(MAX_HOME, "agents");
 
-/** Root of the LLM-maintained wiki knowledge base */
-export const WIKI_DIR = join(MAX_HOME, "wiki");
+/** Root of the COG memory system */
+export const COG_DIR = join(MAX_HOME, "cog");
 
-/** Wiki pages (entity, concept, summary files) */
-export const WIKI_PAGES_DIR = join(WIKI_DIR, "pages");
+/** Active memory (domains, cog-meta, glacier index) */
+export const COG_MEMORY_DIR = join(COG_DIR, "memory");
 
-/** Raw ingested source documents (immutable) */
-export const WIKI_SOURCES_DIR = join(WIKI_DIR, "sources");
+/** Cross-domain meta: patterns, self-observations, cursors */
+export const COG_META_DIR = join(COG_MEMORY_DIR, "cog-meta");
+
+/** Archived / condensed memory */
+export const COG_GLACIER_DIR = join(COG_MEMORY_DIR, "glacier");
+
+/** Immutable source dumps (including the wiki archive after migration) */
+export const COG_SOURCES_DIR = join(COG_DIR, "sources");
+
+/** Domain manifest (SSOT for registered domains) */
+export const COG_DOMAINS_PATH = join(COG_MEMORY_DIR, "domains.yml");
+
+/** Root system prompt, ported from COG's CLAUDE.md */
+export const COG_SYSTEM_PATH = join(COG_DIR, "SYSTEM.md");
 
 /** Ensure ~/.max/ exists */
 export function ensureMaxHome(): void {

@@ -5,7 +5,7 @@ AI orchestrator powered by [Copilot SDK](https://github.com/github/copilot-sdk) 
 ## Highlights
 
 - **Always running** — persistent daemon, not a chat tab. Available from your terminal or your phone.
-- **Remembers like a person** — Max keeps a personal wiki at `~/.max/wiki/` that grows with every conversation. Per-entity pages (`people/burke.md`, `projects/myapp.md`) with frontmatter, tags, and `[[cross-links]]`. A relevance-ranked index is injected into context on every message, and Max writes daily conversation summaries on his own.
+- **Remembers like a person** — Max's memory is [COG](https://github.com/marciopuga/cog), a three-tier filesystem-resident brain at `~/.max/cog/`. Hot memory and universal patterns ride in the system prompt; domain files (`personal/`, `work/acme/`) load on demand; old entries archive to `glacier/`. Every fact lives in one SSOT file, linked from others via `[[wiki-links]]`. A self-maintaining pipeline (`cog-reflect`, `cog-housekeeping`, `cog-foresight`) runs on its own schedule.
 - **Codes while you're away** — spins up real Copilot CLI worker sessions in any directory and reports back when they're done.
 - **Learns any skill** — pulls from [skills.sh](https://skills.sh) or builds new skills on demand.
 - **Your Copilot subscription** — works with any model your subscription includes (Claude, GPT, Gemini, …). Auto mode picks the right tier per message.
@@ -30,7 +30,7 @@ If you already have Max installed:
 max update
 ```
 
-Or manually: `npm install -g heymax@latest`. Your `~/.max/` config carries forward automatically — SQLite memories are migrated to wiki pages, bundled agents are synced (your customizations preserved), and no data is lost.
+Or manually: `npm install -g heymax@latest`. Your `~/.max/` config carries forward automatically — any legacy `~/.max/wiki/` is archived into `~/.max/cog/sources/wiki-archive/` on first launch (single atomic rename, nothing re-classified), bundled agents are synced (your customizations preserved), and no data is lost.
 
 ## Quick Start
 
@@ -121,7 +121,7 @@ macOS and Windows service integrations are not yet built — on those platforms 
 | Command | Description |
 |---------|-------------|
 | `/model [name]` | Show or switch the current model |
-| `/memory` | Show the wiki index (everything Max has stored) |
+| `/memory` | Show hot memory + domain list from COG |
 | `/skills` | List installed skills |
 | `/workers` | List active worker sessions |
 | `/copy` | Copy last response to clipboard |
@@ -141,16 +141,19 @@ You can talk to Max from:
 - **Telegram** — remote access from your phone (authenticated by user ID)
 - **TUI** — local terminal client (no auth needed)
 
-### Memory
+### Memory — COG
 
-Max maintains a **personal wiki** at `~/.max/wiki/` instead of a flat list of memories. Knowledge is organized into per-entity markdown pages (e.g. `pages/people/burke.md`, `pages/projects/myapp.md`) with YAML frontmatter, tags, and `[[wiki links]]` between related pages.
+Max's memory is **COG** (Cognitive Architecture — based on [marciopuga/cog](https://github.com/marciopuga/cog), adapted for the Copilot SDK). Filesystem-resident, three-tier, domain-partitioned, self-maintaining.
 
-- **`remember`** — fuzzy-matches existing pages and merges new facts in instead of duplicating
-- **`recall`** / **`wiki_search`** / **`wiki_read`** — Max searches a ranked index first, then drills into specific pages
-- **`forget`** — line removal, section rewrite, or whole-page deletion
-- **Index-first context** — every message carries a relevance + recency-ranked table of contents of the wiki, so Max sees what he knows without force-feeding stale page bodies into every prompt
-- **Episodic memory** — after long enough conversations, Max writes a daily summary to `pages/conversations/YYYY-MM-DD.md` asynchronously, never blocking your reply
-- **Migration** — older SQLite-based memories are migrated and reorganized into entity pages on first launch; originals are archived to `sources/migrated-archive/`
+- **Hot / Warm / Glacier** — `hot-memory.md` and universal `cog-meta/patterns.md` ride in every session's system prompt. Domain files (`~/.max/cog/memory/personal/`, `~/.max/cog/memory/work/<job>/`) are loaded on demand by the matching `cog-*` skill. Files over size thresholds are archived to `glacier/` with YAML frontmatter and a catalog in `glacier/index.md`.
+- **Single Source of Truth** — every fact lives in one canonical file (`entities.md`, `action-items.md`, `calendar.md`, `health.md`, …). Duplicates elsewhere become `[[wiki-links]]` to the canonical source.
+- **Append-only observations** — `observations.md` is a timestamped, tagged, never-edited log of raw events. `cog-reflect` distills clusters of 3+ related observations into patterns.
+- **L0 → L1 → L2 retrieval** — every memory file starts with a one-line `<!-- L0: ... -->` summary. Max greps L0 headers before opening files, scans section headers (L1) before reading the full body (L2).
+- **Self-maintaining pipeline** — a scheduler runs `cog-reflect` nightly (mines recent conversations, extracts patterns, detects threads), `cog-housekeeping` weekly (archives, prunes hot-memory, rebuilds link index), and `cog-foresight` daily (one strategic nudge written to `cog-meta/foresight-nudge.md`). `max reflect`, `max housekeeping`, `max evolve` CLI entry points (and their systemd timers) dispatch the same skills through `POST /cog/trigger`.
+- **Conversational setup** — `cog-setup` walks you through declaring domains ("What do you do for work? Any side projects?") and seeds the directory tree.
+- **Migration** — any legacy `~/.max/wiki/` from older Max versions is moved verbatim to `~/.max/cog/sources/wiki-archive/` on first launch. `cog-reflect` surfaces its contents organically over time.
+
+Editing `~/.max/cog/SYSTEM.md` customizes Max's persona and memory rules without touching source code.
 
 ## Architecture
 
