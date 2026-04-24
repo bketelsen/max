@@ -38,7 +38,7 @@ Without a skill active, use judgment: casual conversation → personal, technica
 
 Persistent memory lives in `~/.max/cog/memory/`. Three tiers:
 
-- **Hot** (`*/hot-memory.md`) — loaded every conversation, <50 lines each, rewrite freely
+- **Hot** (`hot-memory.md` plus injected `cog-meta/patterns.md`) — always in the root session context; per-domain hot-memory files are loaded by the matching skill
 - **Warm** (domain files) — loaded when a skill activates, per-file size limits
 - **Glacier** (`memory/glacier/`) — YAML-frontmattered archives, indexed via `glacier/index.md`
 
@@ -193,7 +193,7 @@ Pipeline skills maintain memory health. The `cog-scheduler` fires them on a sche
 | Skill              | Purpose                                              | Schedule              |
 | ------------------ | ---------------------------------------------------- | --------------------- |
 | `cog-housekeeping` | Archive, prune, link audit, glacier index            | Weekly                |
-| `cog-reflect`      | Mine conversations, condense patterns, detect threads | Nightly if new traffic |
+| `cog-reflect`      | Mine conversations, condense patterns, detect threads | After a 20 h cooldown |
 | `cog-evolve`       | Audit architecture, propose rule changes             | Manual                |
 | `cog-foresight`    | Cross-domain strategic nudge                         | Daily (morning)       |
 

@@ -4,57 +4,54 @@ All notable changes to Max are documented here.
 
 ## [Unreleased]
 
-### Memory — COG port (replaces the wiki system)
+### Docs
 
-- Replace `~/.max/wiki/` with **COG** ([marciopuga/cog](https://github.com/marciopuga/cog), MIT — see `LICENSE-COG.md`) adapted for the Copilot SDK. Memory now lives at `~/.max/cog/`: `memory/{hot-memory,link-index}.md`, per-domain directories (`personal/`, `work/<job>/`), `memory/cog-meta/` for self-observations and patterns, `memory/glacier/` for archives, and `sources/` for immutable inputs.
-- **Skills-only invocation, no custom memory tools.** The orchestrator and agents read and write memory using Copilot CLI's built-in `Read`/`Write`/`Edit`/`Glob`/`Grep`. `remember`, `recall`, `forget`, `wiki_search`, `wiki_read`, `wiki_update`, `wiki_ingest`, `wiki_lint`, `wiki_rebuild_index` are removed from `src/copilot/tools.ts`.
-- **System prompt is now user-editable** at `~/.max/cog/SYSTEM.md` (bundled default shipped at `src/cog/default-system.md`, copied into place on first run). Persona, domain routing table, SSOT rule, L0/L1/L2 retrieval protocol, file edit patterns, and the glacier schema live there — all editable without touching source.
-- **11 bundled pipeline skills** at `skills/cog-*/` — `cog-reflect` (observation clustering, pattern distillation, thread detection), `cog-housekeeping` (archival, link-index audit, hot-memory pruning), `cog-foresight` (daily strategic nudges), `cog-evolve` (memory-architecture audit), `cog-scenario` (decision branch modeling), `cog-history` (deep recall), `cog-setup` (conversational domain bootstrap), plus `cog-personal`, `cog-explainer`, `cog-humanizer`, `cog-commit`. Each carries a Max runtime adapter header translating upstream Claude-Code references to the Copilot SDK runtime.
-- **In-daemon scheduler** (`src/cog/scheduler.ts`) dispatches `cog-reflect` nightly (>20 h since last), `cog-housekeeping` weekly, `cog-foresight` daily (morning). `cog-reflect` now queries `sessions/session-store.db` directly via the SQL tool, owns its `cog-meta/reflect-cursor.md` turn cursor, and uses a runtime lock to prevent duplicate runs.
-- **cog-reflect refactor**: Removed intermediate `recent-conversations.md` file; cog-reflect now queries `session-store.db` directly via SQL tool for cleaner, more accurate conversation analysis.
-- **CLI + systemd compatibility preserved.** `max reflect`, `max housekeeping`, `max evolve` still exist — they are now thin wrappers over `POST /cog/trigger` on the running daemon. The systemd timers from `max service install-*` continue to fire these commands unchanged. `--dry-run` and `--hours N` flags are accepted for back-compat but warn and are ignored (skill-driven execution decides what to change).
-- **Session invalidation when bundled content changes** (`src/cog/fingerprint.ts`). Copilot SDK bakes the skill list into a session at create time; `resumeSession` does not re-discover skills. On each daemon start the bundled skills' + SYSTEM.md's SHA-256 is compared to the last stored fingerprint; on mismatch the saved `orchestrator_session_id` is deleted so the next boot creates a fresh session that picks up the current skill list.
-- **Admin endpoint** `POST /cog/trigger { skill: reflect | housekeeping | foresight | evolve, force?: boolean }` — bearer-token-authed. Default `force: true`. Used by the CLI wrappers; also usable directly via curl for ad-hoc dispatch.
-- **Wiki archive migration.** On first boot, any legacy `~/.max/wiki/` is moved verbatim to `~/.max/cog/sources/wiki-archive/` via a single atomic rename (idempotent, gated by the `cog_wiki_archived` state key). No re-classification; `cog-reflect` surfaces its contents organically over time.
-- **Removed**: `src/wiki/*`, `src/copilot/episode-writer.ts`, `skills/evolve/`, `skills/housekeeping/` (the bare pre-COG versions — `cog-evolve` / `cog-housekeeping` supersede them).
-- **Updated** `/memory` HTTP endpoint and Telegram `/memory` command to return/display COG hot memory, universal patterns, and the domain list from `domains.yml` (previously returned the wiki index).
-
-### Configuration
-
-- Dropped dead env vars: `REFLECT_ENABLED`, `REFLECT_NOTIFY_TELEGRAM`, `REFLECT_NOTIFY_ON_ERROR_ONLY`, `REFLECT_HOURS`, `REFLECT_PATTERN_THRESHOLD`. COG cadence and thresholds are module constants in `src/cog/scheduler.ts`.
-- `.env.example` rewritten — documents `API_BIND` (0.0.0.0 for LAN exposure) and the `AUTH_*` variables that accompany it. Memory section now describes COG instead of wiki.
+- Refresh the public docs so they match the current runtime: agent-based architecture, LAN auth, web UI behavior, `max auth`, `max service` timer subcommands, and the current API surface.
+- Replace the stock Vite README in `web/` with documentation for the actual Max web client.
 
 ## [1.5.0] — 2026-04-22
 
-### Multi-agent system
-- Replace ephemeral workers with a persistent multi-agent architecture — Max now delegates to specialist agents (coder, designer, general-purpose) that run in their own Copilot sessions.
-- Bundled agent definitions ship with Max and auto-sync on startup; user customizations are preserved.
-- `delegate_to_agent` now includes a summary field for compact `/workers` display.
-- Show agent name and model in `/workers` output.
-- All agents get full tool access by default.
+### Multi-agent runtime
 
-### Wiki memory v2
-- Complete rewrite of the wiki memory system for reliability and correctness.
-- Ranked index-first context injection — every message carries a relevance + recency-scored table of contents instead of force-feeding stale page bodies.
-- Episodic memory — after extended conversations, a background writer summarizes the session into daily conversation pages with cross-references.
-- Wiki reorganization — flat ingested dumps are automatically split into per-entity pages (`people/`, `projects/`, etc.).
-- Richer wiki index with tags, dates, and improved search ranking.
-- `remember`, `recall`, `forget` redesigned as wiki-only tools.
-- SQLite memory legacy fully removed — automatic migration on upgrade.
+- Keep a single persistent orchestrator session and delegate work through `delegate_to_agent`.
+- Ship bundled agent definitions in `agents/*.agent.md`, sync them into `~/.max/agents/`, and preserve local edits on later syncs.
+- Include bundled roles for `@max`, `@coder`, `@designer`, `@general-purpose`, `@architect`, and `@critic`.
+- Track delegated work in `agent_tasks`, expose active work through `/agents`, and expose roster + recent/running task state through `/agents/status`.
 
-### Skills
-- Bundle the `frontend-design` skill with an updated designer agent prompt.
+### Memory — COG
+
+- Replace `~/.max/wiki/` with **COG** at `~/.max/cog/`, including `memory/`, `sources/`, `cog-meta/`, and `glacier/`.
+- Remove custom memory tools; orchestrator and agents use built-in filesystem tools directly against COG.
+- Make the root system prompt user-editable at `~/.max/cog/SYSTEM.md`, seeded from `src/cog/default-system.md`.
+- Bundle 11 `cog-*` skills plus additional bundled skills such as `find-skills`, `frontend-design`, and `gogcli`.
+- Dispatch `cog-reflect`, `cog-housekeeping`, and `cog-foresight` from the in-daemon scheduler, and preserve `max reflect`, `max housekeeping`, and `max evolve` as HTTP-backed wrappers.
+- Invalidate the persisted orchestrator session automatically when bundled skills or the bundled system prompt change.
+- Archive any legacy `~/.max/wiki/` tree into `~/.max/cog/sources/wiki-archive/` on first launch.
+
+### Web UI and auth
+
+- Serve a Vite + React web client from the daemon, backed by the same HTTP API and SSE stream as the TUI.
+- Add browser auth flows for TOTP and WebAuthn passkeys, with localhost-only setup routes and LAN cookie sessions.
+- Add `max auth setup`, `max auth status`, and `max auth reset` for CLI-side auth management.
+- Add `/auth/bootstrap` so localhost web clients can obtain the daemon bearer token without exposing it to LAN clients.
+
+### Operations and API
+
+- Support `max service install-housekeeping`, `install-reflect`, and `install-evolve` with matching uninstall/status/log subcommands.
+- Expose `/history` for recent conversation restoration, `/cog/trigger` for skill dispatch, `/restart` for daemon restart, and `/send-photo` for Telegram photo delivery.
+- Keep `GET /sessions` as a back-compat alias for `GET /agents`.
 
 ### Bug fixes
-- Fix Telegram errors on long messages (chunk messages that exceed Telegram's limit).
-- Fix `model_override` always being ignored for non-auto agents.
-- Fix orchestrator timeout: never surface timeout errors to user.
-- Fix duplicate messages caused by timeout retries.
-- Prune orphaned session folders at startup (older than 7 days).
 
-### Under the hood
-- Update `@github/copilot-sdk` to 0.2.2.
-- Updated docs, README, and system message for the new memory and agent systems.
+- Chunk long Telegram replies to stay under Telegram's message limit.
+- Respect `model_override` for non-auto delegated agents.
+- Avoid surfacing orchestrator timeout noise to the user and reduce duplicate timeout retry output.
+- Prune orphaned session-state folders older than 7 days on startup.
+
+### Configuration
+
+- Document `API_BIND`, `AUTH_RP_ID`, `AUTH_RP_ORIGIN`, `AUTH_SESSION_TTL`, `COPILOT_MODEL`, and `WORKER_TIMEOUT` in `.env.example`.
+- Remove obsolete wiki-era and reflect-era environment variables from the supported configuration surface.
 
 ---
 

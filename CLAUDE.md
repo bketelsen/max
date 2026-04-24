@@ -16,9 +16,9 @@ npm run tui                # run TUI client against a running daemon
 npm run web:dev            # vite dev server for web/
 npm run web:build          # production web bundle into web/dist/
 
-node --test tests/<file>.test.ts                     # run a single test file
-node --test tests/                                   # run all tests (node:test runner, no Jest)
-node --test --test-name-pattern='<substring>' tests  # run tests matching a name
+node --test web/tests/<file>.test.ts                     # run a single web test file
+node --test web/tests/*.test.ts                          # run all checked-in tests
+node --test --test-name-pattern='<substring>' web/tests  # run tests matching a name
 ```
 
 Launching the CLI after build: `node dist/cli.js <command>` or `npm link` + `max <command>`. `max help` lists every subcommand (`start`, `tui`, `setup`, `auth`, `service`, `housekeeping`, `reflect`, `evolve`, `update`).
@@ -41,8 +41,8 @@ Max is a persistent daemon that wraps **`@github/copilot-sdk`** and exposes it t
                                         │
                  ┌──────────────────────┼───────────────────────┐
                  ▼                      ▼                       ▼
-         orchestrator session    agent sessions (@mention)   worker sessions
-         (persistent `@max`)    (src/copilot/agents.ts)     (spawned per task)
+         orchestrator session    bundled/user agent defs    delegated sessions
+         (persistent `@max`)    (synced into ~/.max/agents) (spawned per task)
 ```
 
 - **`src/daemon.ts`** is the entrypoint for `max start`. It boots SQLite (`src/store/db.ts`), ensures COG scaffolding (`src/cog/fs.ts`), archives any legacy `~/.max/wiki/` into `cog/sources/wiki-archive/` (`src/cog/migrate.ts`), invalidates the saved orchestrator session when bundled skills or the system prompt change (`src/cog/fingerprint.ts`), then brings up the Copilot client, orchestrator, Express API + SSE, Telegram bot, and the COG scheduler (`src/cog/scheduler.ts`).
