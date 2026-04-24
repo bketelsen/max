@@ -40,8 +40,43 @@ export type MessageCallback = (text: string, done: boolean) => void;
 type LogFn = (direction: "in" | "out", source: string, text: string) => void;
 let logMessage: LogFn = () => {};
 
+type ConversationLogFn = typeof logConversation;
+
+type PersistConversationAndDeliverOptions = {
+  logRole: "user" | "assistant" | "system";
+  prompt: string;
+  finalContent: string;
+  sourceLabel: string;
+  callback: MessageCallback;
+  logConversationFn?: ConversationLogFn;
+  logMessageFn?: LogFn;
+  errorLogger?: (message: string) => void;
+};
+
 export function setMessageLogger(fn: LogFn): void {
   logMessage = fn;
+}
+
+export function persistConversationAndDeliver({
+  logRole,
+  prompt,
+  finalContent,
+  sourceLabel,
+  callback,
+  logConversationFn = logConversation,
+  logMessageFn = logMessage,
+  errorLogger = (message) => console.error(message),
+}: PersistConversationAndDeliverOptions): void {
+  // Persist to DB first (blocking) — ensures DB is always source of truth.
+  try {
+    logConversationFn(logRole, prompt, sourceLabel);
+    logConversationFn("assistant", finalContent, sourceLabel);
+  } catch (err) {
+    errorLogger(`[max] Failed to persist conversation: ${err instanceof Error ? err.message : err}`);
+  }
+
+  callback(finalContent, true);
+  try { logMessageFn("out", sourceLabel, finalContent); } catch { /* best-effort */ }
 }
 
 // Proactive notification — sends unsolicited messages to the user on a specific channel
@@ -462,12 +497,13 @@ export async function sendToOrchestrator(
           messageQueue.push({ prompt: taggedPrompt, attachments, callback, sourceChannel, targetAgent, resolve, reject });
           processQueue();
         });
-        // Deliver response to user FIRST, then log best-effort
-        callback(finalContent, true);
-        try { logMessage("out", sourceLabel, finalContent); } catch { /* best-effort */ }
-        // Log both sides of the conversation after delivery
-        try { logConversation(logRole, prompt, sourceLabel); } catch { /* best-effort */ }
-        try { logConversation("assistant", finalContent, sourceLabel); } catch { /* best-effort */ }
+        persistConversationAndDeliver({
+          logRole,
+          prompt,
+          finalContent,
+          sourceLabel,
+          callback,
+        });
         return;
       } catch (err) {
         const details = describeCopilotError(err);
