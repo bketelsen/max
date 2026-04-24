@@ -17,7 +17,7 @@ This skill is a port of an upstream Claude-Code-native COG skill. When the upstr
   - **Bundled**: the Max installation's `skills/` directory (ships with the package, shared, **read-only from your perspective**). Use `list_skills` to discover full paths and read them as reference/templates.
   - **Local**: `~/.max/skills/` (user-owned, writable). **Always write new skill files here**, using absolute paths: `~/.max/skills/cog-<name>/SKILL.md` and `~/.max/skills/cog-<name>/_meta.json`. `list_skills` will register them as `source: "local"` on the next session.
   - **Never write to the bundled tree** — it's source code, shared, and overwritten on update. If you'd harm a file by writing it, it's bundled; check `list_skills` if unsure.
-- **`~/.claude/projects/*.jsonl` session transcripts** — Max does NOT have these. Instead, read `~/.max/cog/memory/cog-meta/recent-conversations.md`. That file is a markdown chronicle of new `conversation_log` rows, dumped by the `cog-scheduler` right before this skill is invoked. Each block is a user or Max turn with source tag, timestamp, and id. Do NOT look for `.jsonl` files. The ingestion cursor lives in `~/.max/cog/memory/cog-meta/reflect-cursor.md` and is advanced by the scheduler — do not rewrite it, do not try to "discover" a transcript path.
+- **`~/.claude/projects/*.jsonl` session transcripts** — Max stores session history in `~/.max/sessions/session-store.db`. If you need historical conversation context, use the SQL tool with `database: 'session_store'` to query turns, sessions, checkpoints, and search_index tables. See the system prompt for schema details.
 - **Slash commands** (`/reflect`, `/housekeeping`, `/foresight`, `/scenario`, `/setup`, etc.) — these map to Max skills with the `cog-` prefix (`cog-reflect`, `cog-housekeeping`, etc.). When the upstream tells you to "run /X", it means: invoke or behave as the `cog-X` skill.
 - **Shell commands** (`find`, `grep`, `git diff`) — use Copilot CLI's built-in `Grep`, `Glob`, and Bash tools against the absolute `~/.max/cog/memory/` paths.
 - **Read/Edit/Write/Glob/Grep tools** — Copilot CLI provides these under the same verbs. Use them directly.
@@ -192,7 +192,7 @@ Then tell the user where the new skill files ended up and how to activate them:
 
 ### 3d. Session transcripts (Max-specific)
 
-**No action needed.** Max does not use Claude Code's `~/.claude/projects/*.jsonl` transcripts. The `cog-scheduler` inside the daemon maintains the ingestion cursor at `~/.max/cog/memory/cog-meta/reflect-cursor.md` and dumps new `conversation_log` rows to `recent-conversations.md` automatically before each cog-reflect run. Skip this step entirely — do not write a `session_path:` field, do not try to discover a transcript directory.
+**No action needed.** Max does not use Claude Code's `~/.claude/projects/*.jsonl` transcripts. Historical conversation context lives in `~/.max/sessions/session-store.db` and is queried directly via the SQL tool when needed. Skip this step entirely — do not write a `session_path:` field, and do not try to discover a transcript directory.
 
 ### 3e. System prompt routing (Max-specific)
 

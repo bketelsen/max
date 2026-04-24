@@ -1,6 +1,6 @@
 ---
 name: cog-reflect
-description: Cog Reflect — self-improvement and pattern mining over recent conversations and observations. Use when the user says "reflect", "what have you learned", "how can you improve", "review yourself", or asks for introspection. Mines ~/.max/cog/memory/cog-meta/recent-conversations.md, clusters observations, distills patterns into cog-meta/patterns.md, raises threads when topics recur, updates cog-meta/self-observations.md. Invoked nightly by the cog-scheduler.
+description: Cog Reflect — self-improvement and pattern mining over recent conversations and observations. Use when the user says "reflect", "what have you learned", "how can you improve", "review yourself", or asks for introspection. Mines ~/.max/sessions/session-store.db via SQL, clusters observations, distills patterns into cog-meta/patterns.md, raises threads when topics recur, updates cog-meta/self-observations.md. Invoked nightly by the cog-scheduler.
 ---
 
 <!--
@@ -17,7 +17,7 @@ This skill is a port of an upstream Claude-Code-native COG skill. When the upstr
   - **Bundled**: the Max installation's `skills/` directory (ships with the package, shared, **read-only from your perspective**). Use `list_skills` to discover full paths and read them as reference/templates.
   - **Local**: `~/.max/skills/` (user-owned, writable). **Always write new skill files here**, using absolute paths: `~/.max/skills/cog-<name>/SKILL.md` and `~/.max/skills/cog-<name>/_meta.json`. `list_skills` will register them as `source: "local"` on the next session.
   - **Never write to the bundled tree** — it's source code, shared, and overwritten on update. If you'd harm a file by writing it, it's bundled; check `list_skills` if unsure.
-- **`~/.claude/projects/*.jsonl` session transcripts** — Max does NOT have these. Instead, read `~/.max/cog/memory/cog-meta/recent-conversations.md`. That file is a markdown chronicle of new `conversation_log` rows, dumped by the `cog-scheduler` right before this skill is invoked. Each block is a user or Max turn with source tag, timestamp, and id. Do NOT look for `.jsonl` files. The ingestion cursor lives in `~/.max/cog/memory/cog-meta/reflect-cursor.md` and is advanced by the scheduler — do not rewrite it, do not try to "discover" a transcript path.
+- **`~/.claude/projects/*.jsonl` session transcripts** — Max stores session history in `~/.max/sessions/session-store.db`. Use the SQL tool with `database: 'session_store'` to query the `turns`, `sessions`, and `search_index` tables. The ingestion cursor lives in `~/.max/cog/memory/cog-meta/reflect-cursor.md` (field: `last_turn_id`). You own the cursor — read it, process new turns, write it back ONLY on success.
 - **Slash commands** (`/reflect`, `/housekeeping`, `/foresight`, `/scenario`, `/setup`, etc.) — these map to Max skills with the `cog-` prefix (`cog-reflect`, `cog-housekeeping`, etc.). When the upstream tells you to "run /X", it means: invoke or behave as the `cog-X` skill.
 - **Shell commands** (`find`, `grep`, `git diff`) — use Copilot CLI's built-in `Grep`, `Glob`, and Bash tools against the absolute `~/.max/cog/memory/` paths.
 - **Read/Edit/Write/Glob/Grep tools** — Copilot CLI provides these under the same verbs. Use them directly.
@@ -61,7 +61,7 @@ Focus on recently-changed files. Skip files that haven't been modified since las
 ## Memory Files
 
 Read these files on activation:
-- `memory/cog-meta/reflect-cursor.md` (session path + ingestion cursor)
+- `memory/cog-meta/reflect-cursor.md` (turn cursor + last run)
 - `memory/cog-meta/self-observations.md`
 - `memory/cog-meta/patterns.md`
 - `memory/cog-meta/improvements.md`
@@ -75,25 +75,50 @@ Reference as needed (read `memory/domains.yml` to discover all active domains):
 
 ### 1. Review Recent Interactions
 
-**Source: Claude Code session transcripts.** Read `memory/cog-meta/reflect-cursor.md` for the session path and cursor.
+**Source: session-store database via SQL tool.**
 
-**How to read sessions:**
-1. Get `session_path` from reflect-cursor.md
-2. Glob for `*.jsonl` in that directory — each file is one session
-3. Get `last_processed` timestamp from reflect-cursor.md
-4. Only read sessions modified **after** `last_processed` (skip already-ingested sessions). If `last_processed` is `never`, read the most recent 3 sessions.
-5. Extract user messages: lines where `type` is `"user"` and `message.content` is a **string** (not an array — arrays are tool results, skip those)
-6. Extract assistant messages: lines where `type` is `"assistant"` and `message.content` contains items with `type: "text"`
+**Cursor format** (`memory/cog-meta/reflect-cursor.md`):
+```
+last_turn_id: 12345
+last_run: 2026-04-24T15:00:00.000Z
+source: session_store (SQL)
+```
 
-**After processing**, update `last_processed` in reflect-cursor.md to the current timestamp.
+**Query new turns:**
+```sql
+SELECT
+  t.id,
+  s.id as session_id,
+  s.summary,
+  t.turn_index,
+  t.user_message,
+  t.assistant_response,
+  t.timestamp
+FROM turns t
+JOIN sessions s ON t.session_id = s.id
+WHERE t.id > ?last_turn_id
+  AND s.summary LIKE '[via %'
+  AND t.user_message NOT LIKE '[cog-scheduler]%'
+  AND t.user_message NOT LIKE '<skill-context %'
+  AND t.user_message NOT LIKE '[Agent task completed]%'
+  AND t.user_message NOT LIKE '/cog-%'
+ORDER BY t.id ASC
+LIMIT 300
+```
+
+**Cursor migration** (first run only):
+- If cursor has old `last_conversation_id`, migrate:
+  - Read `last_run` timestamp
+  - Query: `SELECT id FROM turns WHERE timestamp >= ?last_run - 5min ORDER BY id ASC LIMIT 1`
+  - Use that id as `last_turn_id` (overlap buffer prevents data loss)
+- If no cursor or `last_run: never`, get most recent 3 sessions worth
+
+**After processing**, write new cursor with highest `t.id` seen and current timestamp.
 
 **Look for:**
-- **Unresolved threads** — questions asked but never answered, topics dropped mid-conversation
-- **Broken promises** — "I'll do X", "let's do Y" that never happened
-- **Repeated friction** — same question asked multiple ways, user corrections, confusion patterns
-- **Missed cues** — things the user had to repeat, emotional signals not picked up
-- **Memory gaps** — information discussed but never saved to memory files
-- **Feature ideas** — things that came up organically that would improve the system
+- Unresolved threads, broken promises
+- Repeated friction, missed cues
+- Memory gaps, feature ideas
 
 ### 2. Cross-Reference Memory & Consistency Sweep
 
@@ -142,7 +167,7 @@ Check if findings are already captured:
 
 Scan all `entities.md` files for format compliance:
 1. **3-line check**: Any `### entry` with >3 content lines → compress. If the entry has a detail file (`→ [[link]]`), trim to: name line, key facts, status/link. If no detail file exists but entry is >5 lines, flag as a promotion candidate for a thread file.
-2. **Status/last fields**: Every entry should have `status: active|inactive` and `last: YYYY-MM-DD`. Scan recent session transcripts to update `last:` dates for mentioned entities.
+2. **Status/last fields**: Every entry should have `status: active|inactive` and `last: YYYY-MM-DD`. Scan recent session-store turns to update `last:` dates for mentioned entities.
 3. **Cross-domain pointers**: If the same person appears in multiple entity files, ensure one is canonical (full entry) and others are pointers (`see [[link]]`).
 
 ### 3c. Detect Thread Candidates
@@ -242,5 +267,7 @@ Keep it honest. If there's nothing notable, say so.
 **Improvement idea**: `- <idea> (added YYYY-MM-DD)`
 
 ## Activation
+
+**Concurrency check**: Before starting, check if another reflect is running. If `reflect_running` state exists and is <30min old, exit early with "Reflect already in progress".
 
 Read the memory files listed above. Then begin the reflection process. Be genuinely critical — this is how we get better.

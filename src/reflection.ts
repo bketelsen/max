@@ -12,7 +12,7 @@ export async function runReflectionCli(dryRun: boolean, hours: number): Promise<
     console.warn("⚠ --dry-run is not supported by the COG backend. The cog-reflect skill decides what to change; running for real.");
   }
   if (hours !== 24) {
-    console.warn(`⚠ --hours ${hours} is ignored by the COG backend. cog-reflect processes new conversation_log rows since its persisted cursor.`);
+    console.warn(`⚠ --hours ${hours} is ignored by the COG backend. cog-reflect processes new session-store turns since its persisted cursor.`);
   }
 
   const res = await triggerCogSkillViaApi("reflect", true);
