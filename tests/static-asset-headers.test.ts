@@ -3,11 +3,8 @@ import { test } from "node:test";
 
 import { getStaticAssetHeaders } from "../src/api/static-asset-headers.ts";
 
-test("service worker responses get scope and no-cache headers", () => {
-  assert.deepEqual(getStaticAssetHeaders("/sw.js"), {
-    "Cache-Control": "no-cache",
-    "Service-Worker-Allowed": "/",
-  });
+test("service worker requests fall back to default static asset headers", () => {
+  assert.deepEqual(getStaticAssetHeaders("/sw.js"), {});
 });
 
 test("web manifest responses get the correct content type", () => {

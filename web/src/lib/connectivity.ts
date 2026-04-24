@@ -161,35 +161,34 @@ export function getConnectionUiState({
   reconnecting?: boolean;
 }): ConnectionUiSnapshot {
   if (!browserOnline) {
-    return {
-      ariaLabel: "Offline",
-      composerDisabled: true,
-      composerMessage:
-        "You're offline. Cached messages are still available, but sending is disabled until you're back online.",
-      label: "You're offline",
-      state: "offline",
-    };
+      return {
+        ariaLabel: "Offline",
+        composerDisabled: true,
+        composerMessage:
+          "You're offline. Sending is disabled until you're back online.",
+        label: "You're offline",
+        state: "offline",
+      };
   }
 
   if (reconnecting) {
-    return {
-      ariaLabel: "Reconnecting",
-      composerDisabled: true,
-      composerMessage: "Reconnecting to Max. Cached messages stay visible while chat reconnects.",
-      label: "Reconnecting",
-      state: "reconnecting",
-    };
+      return {
+        ariaLabel: "Reconnecting",
+        composerDisabled: true,
+        composerMessage: "Reconnecting to Max. Messages stay visible while chat reconnects.",
+        label: "Reconnecting",
+        state: "reconnecting",
+      };
   }
 
   if (!connected) {
-    return {
-      ariaLabel: "Connecting",
-      composerDisabled: true,
-      composerMessage:
-        "Connecting to Max. You can keep reading cached messages while chat reconnects.",
-      label: "Connecting",
-      state: "connecting",
-    };
+      return {
+        ariaLabel: "Connecting",
+        composerDisabled: true,
+        composerMessage: "Connecting to Max. Messages will appear once chat is connected.",
+        label: "Connecting",
+        state: "connecting",
+      };
   }
 
   return {

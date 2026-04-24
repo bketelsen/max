@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   appendSystemMessage as appendSystemMessageToList,
   HYDRATED_MESSAGE_LIMIT,
-  loadStoredMessages,
-  persistMessages,
 } from "@/lib/chat-messages";
 import { resolveRestoredMessages } from "@/lib/chat-history";
 import { createApiClient } from "@/lib/api-client";
@@ -25,13 +23,7 @@ type MaxSseEvent =
   | { type: "cancelled" };
 
 export function useMaxChat() {
-  const [messages, setMessages] = useState<UIMessage[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    return loadStoredMessages(window.localStorage, HYDRATED_MESSAGE_LIMIT);
-  });
+  const [messages, setMessages] = useState<UIMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("ready");
   const [connected, setConnected] = useState(false);
   const [browserOnline, setBrowserOnline] = useState(() => {
@@ -60,12 +52,6 @@ export function useMaxChat() {
 
   useEffect(() => {
     messagesRef.current = messages;
-
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    persistMessages(window.localStorage, messages);
   }, [messages]);
 
   const clearReconnectTimer = useCallback(() => {

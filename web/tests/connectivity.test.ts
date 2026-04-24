@@ -86,7 +86,7 @@ test("connection ui switches to offline read-only mode when the browser is offli
       ariaLabel: "Offline",
       composerDisabled: true,
       composerMessage:
-        "You're offline. Cached messages are still available, but sending is disabled until you're back online.",
+        "You're offline. Sending is disabled until you're back online.",
       label: "You're offline",
       state: "offline",
     }
@@ -99,8 +99,7 @@ test("connection ui keeps the composer disabled until chat is connected", () => 
     {
       ariaLabel: "Connecting",
       composerDisabled: true,
-      composerMessage:
-        "Connecting to Max. You can keep reading cached messages while chat reconnects.",
+      composerMessage: "Connecting to Max. Messages will appear once chat is connected.",
       label: "Connecting",
       state: "connecting",
     }
@@ -266,7 +265,7 @@ test("connection ui shows reconnecting copy while the app restores chat after re
     {
       ariaLabel: "Reconnecting",
       composerDisabled: true,
-      composerMessage: "Reconnecting to Max. Cached messages stay visible while chat reconnects.",
+      composerMessage: "Reconnecting to Max. Messages stay visible while chat reconnects.",
       label: "Reconnecting",
       state: "reconnecting",
     }

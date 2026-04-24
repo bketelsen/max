@@ -37,7 +37,7 @@ The Vite config proxies `/auth`, `/stream`, `/message`, `/cancel`, `/status`, `/
 - Restores recent chat history from `/history`
 - Supports slash commands for help, clear, cancel, model switching, auto routing, memory, skills, agents, and status
 - Shows the agent roster and recent/running task state from `/agents/status`
-- Registers a service worker and PWA manifest for installable use
+- Uses a minimal web manifest for icons and add-to-homescreen metadata
 - Supports localhost auth setup and LAN login with TOTP or passkeys
 
 ## Important files
@@ -49,5 +49,4 @@ The Vite config proxies `/auth`, `/stream`, `/message`, `/cancel`, `/status`, `/
 | `src/hooks/useAuth.ts` | TOTP/passkey login and setup calls |
 | `src/lib/slash-commands.ts` | Slash command registry |
 | `src/lib/slash-command-actions.ts` | Slash command behavior |
-| `src/lib/pwa.ts` | Manifest and service-worker helpers |
 | `tests/` | `node:test` coverage for client-side logic |
