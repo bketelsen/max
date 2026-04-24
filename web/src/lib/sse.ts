@@ -1,3 +1,5 @@
+import { classifyAuthRedirectResponse } from "@/lib/connectivity";
+
 // Fetch-based Server-Sent Events reader.
 // EventSource can't send an Authorization header, so we parse the stream manually.
 // Only handles the subset of SSE that Max emits: `data: ...\n\n` frames and
@@ -5,13 +7,24 @@
 
 export type SseEvent = { data: string };
 
+export class SseAuthExpiredError extends Error {
+  constructor() {
+    super("SSE authentication expired");
+    this.name = "SseAuthExpiredError";
+  }
+}
+
 export async function openSseStream(
   url: string,
   init: RequestInit,
   onEvent: (evt: SseEvent) => void,
+  onActivity?: () => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch(url, { ...init, signal });
+  const res = await fetch(url, { ...init, redirect: "manual", signal });
+  if (classifyAuthRedirectResponse(res) === "auth-expired") {
+    throw new SseAuthExpiredError();
+  }
   if (!res.ok || !res.body) {
     throw new Error(`SSE connection failed: ${res.status} ${res.statusText}`);
   }
@@ -24,6 +37,7 @@ export async function openSseStream(
     for (;;) {
       const { value, done } = await reader.read();
       if (done) return;
+      onActivity?.();
       buffer += decoder.decode(value, { stream: true });
 
       let frameEnd: number;

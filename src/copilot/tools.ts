@@ -806,21 +806,67 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
         "Create or update a wiki page. You provide the full page content (markdown with optional " +
         "YAML frontmatter). The page will be written to disk and the index updated. Use this for " +
         "rich knowledge pages, entity pages, synthesis documents — anything more structured than " +
-        "a quick 'remember' call. After creating/updating a page, the index is automatically updated.",
+        "a quick 'remember' call. After creating/updating a page, the index is automatically updated. " +
+        "Every page should have an L0 summary header (<!-- L0: ... -->) for fast relevance scanning.",
       parameters: z.object({
-        path: z.string().describe("Page path relative to wiki root (e.g. 'pages/projects/max.md')"),
+        path: z.string().describe("Page path relative to wiki root (e.g. 'pages/projects/max.md' or 'hot-memory.md')"),
         title: z.string().describe("Page title for the index"),
         summary: z.string().describe("One-line summary for the index"),
         section: z.string().optional().describe("Index section (default: 'Knowledge')"),
         content: z.string().describe("Full page content (markdown)"),
+        l0_summary: z.string().optional().describe("L0 summary line (<100 chars). Auto-generated from summary if omitted."),
       }),
       handler: async (args) => {
         return withWikiWrite(async () => {
           ensureWikiStructure();
           assertPagePath(args.path);
-          writePage(args.path, args.content);
-          // Rebuild from disk so the index summary/tags/updated reflect the actual page,
-          // but prefer caller-supplied title/summary/section as overrides.
+
+          // Ensure L0 header is present in content
+          let content = args.content;
+          const l0Text = args.l0_summary || args.summary;
+          const l0Regex = /^<!--\s*L0:\s*.+\s*-->/;
+          const fmRegex = /^(---\s*\n[\s\S]*?\n---)\s*\n?/;
+
+          // Check if content already has an L0 header (after frontmatter if present)
+          const fmMatch = content.match(fmRegex);
+          const afterFm = fmMatch ? content.slice(fmMatch[0].length) : content;
+          const firstContentLine = afterFm.split("\n").find(l => l.trim().length > 0);
+          const hasL0 = firstContentLine ? l0Regex.test(firstContentLine.trim()) : false;
+
+          // For hot-memory.md, check first line directly (no frontmatter expected)
+          const isHotMemory = args.path === "hot-memory.md";
+          const hasL0AtTop = l0Regex.test(content.split("\n")[0]?.trim() || "");
+
+          // Validate L0 summary length
+          if (l0Text.length > 150) {
+            throw new Error(
+              `L0 summary too long (${l0Text.length} chars). Must be <100 chars. ` +
+              `Be concise: key identifier + essential context only. No truncation with "...".`
+            );
+          }
+          if (l0Text.length > 100) {
+            console.warn(
+              `[wiki_update] L0 summary is ${l0Text.length} chars. Target: <100. Consider shortening.`
+            );
+          }
+
+          if (!hasL0 && !hasL0AtTop) {
+            const l0Line = `<!-- L0: ${l0Text} -->`;
+            if (fmMatch) {
+              content = `${fmMatch[1]}\n\n${l0Line}\n${afterFm}`;
+            } else {
+              content = `${l0Line}\n${content}`;
+            }
+          }
+
+          writePage(args.path, content);
+
+          // hot-memory.md is not indexed — it's always loaded directly
+          if (isHotMemory) {
+            appendLog("update", `wiki_update: ${indexSafe(args.title)} (${args.path})`);
+            return `Hot memory updated: ${args.title}`;
+          }
+
           const today = new Date().toISOString().slice(0, 10);
           const rebuilt = buildIndexEntryForPage(args.path, {
             title: args.title,
@@ -829,7 +875,6 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
             updated: today,
           });
           if (rebuilt) {
-            // Overrides win even if the page frontmatter says otherwise.
             rebuilt.title = args.title;
             rebuilt.summary = indexSafe(args.summary).slice(0, 160);
             rebuilt.section = args.section || "Knowledge";

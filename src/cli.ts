@@ -91,7 +91,8 @@ switch (command) {
   case "service": {
     const { installService, uninstallService, serviceStatus, printServiceHelp,
             installHousekeepingTimer, uninstallHousekeepingTimer, housekeepingStatus, housekeepingLogs,
-            installReflectTimer, uninstallReflectTimer, reflectStatus, reflectLogs } =
+            installReflectTimer, uninstallReflectTimer, reflectStatus, reflectLogs,
+            installEvolveTimer, uninstallEvolveTimer, evolveStatus, evolveLogs } =
       await import("./service.js");
     const sub = args[1];
     if (sub === "install") {
@@ -116,6 +117,14 @@ switch (command) {
       await reflectStatus();
     } else if (sub === "logs-reflect") {
       await reflectLogs();
+    } else if (sub === "install-evolve") {
+      await installEvolveTimer();
+    } else if (sub === "uninstall-evolve") {
+      await uninstallEvolveTimer();
+    } else if (sub === "status-evolve") {
+      await evolveStatus();
+    } else if (sub === "logs-evolve") {
+      await evolveLogs();
     } else {
       printServiceHelp();
       if (sub) process.exit(1);

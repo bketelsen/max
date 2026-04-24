@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { randomBytes } from "crypto";
 import { sendToOrchestrator, getAgentInfo, cancelCurrentMessage, getLastRouteResult } from "../copilot/orchestrator.js";
+import { getAgentStatusRoster } from "../copilot/agents.js";
 import { sendPhoto } from "../telegram/bot.js";
 import { config, persistModel } from "../config.js";
 import { getRouterConfig, updateRouterConfig } from "../copilot/router.js";
@@ -13,7 +14,8 @@ import { restartDaemon } from "../daemon.js";
 import { API_TOKEN_PATH, ensureMaxHome } from "../paths.js";
 import { authRouter } from "./auth-routes.js";
 import { parseCookies, validateSession } from "./auth.js";
-import { isAuthConfigured } from "../store/db.js";
+import { getRecentConversationMessages, isAuthConfigured } from "../store/db.js";
+import { getStaticAssetHeaders } from "./static-asset-headers.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,14 +44,22 @@ const webDist = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../web/dist"
 );
-app.use(express.static(webDist));
+app.use(express.static(webDist, {
+  setHeaders(res, filePath) {
+    const relativePath = `/${path.relative(webDist, filePath).replaceAll(path.sep, "/")}`;
+    const headers = getStaticAssetHeaders(relativePath);
+    for (const [name, value] of Object.entries(headers)) {
+      res.setHeader(name, value);
+    }
+  },
+}));
 
 // SPA fallback: serve index.html for any GET that isn't an API path. Lets the
 // web UI use client-side routing without 404s on refresh. Must run before the
 // auth middleware so HTML navigation to unknown paths doesn't return 401.
 const API_PATHS = new Set([
   "/status", "/auth/bootstrap", "/message", "/stream", "/cancel",
-  "/agents", "/sessions", "/model", "/models", "/auto",
+  "/agents", "/agents/status", "/sessions", "/model", "/models", "/auto", "/history",
   "/memory", "/skills", "/restart", "/send-photo",
 ]);
 const AUTH_PREFIX = "/auth/";
@@ -134,6 +144,17 @@ app.get("/status", (_req: Request, res: Response) => {
 // List agents
 app.get("/agents", (_req: Request, res: Response) => {
   res.json(getAgentInfo());
+});
+
+app.get("/agents/status", (_req: Request, res: Response) => {
+  res.json(getAgentStatusRoster());
+});
+
+app.get("/history", (req: Request, res: Response) => {
+  const rawLimit = typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : Number.NaN;
+  const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
+
+  res.json(getRecentConversationMessages({ limit, source: "web" }));
 });
 
 // Keep /sessions as an alias for backwards compat

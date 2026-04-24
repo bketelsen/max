@@ -8,8 +8,9 @@
 // ---------------------------------------------------------------------------
 
 import { parseIndex, type IndexEntry } from "./index-manager.js";
-import { ensureWikiStructure } from "./fs.js";
+import { ensureWikiStructure, readHotMemory } from "./fs.js";
 
+const HOT_MEMORY_BUDGET_CHARS = 2000;
 const INDEX_BUDGET_CHARS = 4000;
 const RECOVERY_BUDGET_CHARS = 6000;
 
@@ -110,13 +111,23 @@ function formatEntry(entry: IndexEntry): string {
 
 /**
  * Get a summary of the wiki for the system message / recovery context.
- * Returns the index summary (compact list of all pages), capped at
- * RECOVERY_BUDGET_CHARS so a large wiki can't blow up the recovery prompt.
+ * Returns hot memory (always first) + index summary (compact list of all pages),
+ * capped at RECOVERY_BUDGET_CHARS so a large wiki can't blow up the recovery prompt.
  */
 export function getWikiSummary(): string {
   ensureWikiStructure();
+
+  const parts: string[] = [];
+
+  // Hot memory: always loaded first, separate budget
+  const hotMemory = readHotMemory();
+  if (hotMemory) {
+    const trimmed = hotMemory.trim().slice(0, HOT_MEMORY_BUDGET_CHARS);
+    parts.push("## Hot Memory (always loaded)\n" + trimmed);
+  }
+
   const entries = parseIndex();
-  if (entries.length === 0) return "";
+  if (entries.length === 0 && parts.length === 0) return "";
 
   // Sort newest-first so the most recent knowledge survives the cap.
   const sorted = [...entries].sort((a, b) => {
@@ -138,12 +149,15 @@ export function getWikiSummary(): string {
     included++;
   }
 
-  const parts: string[] = [];
-  for (const [section, items] of sections) {
-    parts.push(`**${section}**: ${items.join("; ")}`);
+  if (sections.size > 0) {
+    parts.push("## Wiki Pages");
+    for (const [section, items] of sections) {
+      parts.push(`**${section}**: ${items.join("; ")}`);
+    }
+    if (included < entries.length) {
+      parts.push(`_(${entries.length - included} additional pages elided to fit token budget — use wiki_search to retrieve them)_`);
+    }
   }
-  if (included < entries.length) {
-    parts.push(`_(${entries.length - included} additional pages elided to fit token budget — use wiki_search to retrieve them)_`);
-  }
-  return parts.join("\n");
+
+  return parts.join("\n\n");
 }

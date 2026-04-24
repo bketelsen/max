@@ -35,9 +35,9 @@ export function assertPagePath(relativePath: string): void {
   if (relativePath.includes("\0") || relativePath.includes("..")) {
     throw new Error(`Refused unsafe wiki path: ${relativePath}`);
   }
-  if (!relativePath.startsWith("pages/")) {
+  if (!relativePath.startsWith("pages/") && relativePath !== "hot-memory.md") {
     throw new Error(
-      `Refused: only pages under pages/ may be modified by tools. Got: ${relativePath}`
+      `Refused: only pages under pages/ (or hot-memory.md) may be modified by tools. Got: ${relativePath}`
     );
   }
   if (!relativePath.endsWith(".md")) {
@@ -178,10 +178,25 @@ export function getWikiDir(): string {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Path to the hot-memory file at wiki root. */
+export const HOT_MEMORY_PATH = join(WIKI_DIR, "hot-memory.md");
+
+/** Read hot-memory.md. Returns undefined if not found. */
+export function readHotMemory(): string | undefined {
+  if (!existsSync(HOT_MEMORY_PATH)) return undefined;
+  return readFileSync(HOT_MEMORY_PATH, "utf-8");
+}
+
+/** Write hot-memory.md atomically. */
+export function writeHotMemory(content: string): void {
+  writeFileAtomic(HOT_MEMORY_PATH, content);
+}
+
 function resolvePath(relativePath: string): string {
   let base: string;
   if (relativePath.startsWith("pages/") || relativePath.startsWith("sources/") ||
-      relativePath === "index.md" || relativePath === "log.md") {
+      relativePath === "index.md" || relativePath === "log.md" ||
+      relativePath === "hot-memory.md") {
     base = WIKI_DIR;
   } else {
     base = WIKI_PAGES_DIR;

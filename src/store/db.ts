@@ -185,6 +185,53 @@ export function logConversation(role: "user" | "assistant" | "system", content: 
   }
 }
 
+export type ConversationMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+};
+
+export function clearConversationLog(): void {
+  getDb().prepare(`DELETE FROM conversation_log`).run();
+}
+
+export function getRecentConversationMessages({
+  limit = 50,
+  source,
+}: {
+  limit?: number;
+  source?: string;
+} = {}): ConversationMessage[] {
+  const db = getDb();
+  const safeLimit = Math.max(0, Math.min(limit, 50));
+
+  if (safeLimit === 0) {
+    return [];
+  }
+
+  const rows = (
+    source
+      ? db.prepare(
+          `SELECT id, role, content FROM conversation_log WHERE source = ? ORDER BY id DESC LIMIT ?`
+        ).all(source, safeLimit)
+      : db.prepare(
+          `SELECT id, role, content FROM conversation_log ORDER BY id DESC LIMIT ?`
+        ).all(safeLimit)
+  ) as Array<{
+    id: number;
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
+
+  rows.reverse();
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    role: row.role,
+    text: row.content,
+  }));
+}
+
 /** Get recent conversation history formatted for injection into system message. */
 export function getRecentConversation(limit = 20): string {
   const db = getDb();

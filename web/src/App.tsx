@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CopyIcon } from "lucide-react";
 import {
   Conversation,
@@ -16,17 +16,26 @@ import {
 import {
   PromptInput,
   PromptInputBody,
+  PromptInputProvider,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
+  usePromptInputController,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Badge } from "@/components/ui/badge";
+import { SlashCommandPopup } from "@/components/slash-command-popup";
+import { AgentStatusDrawer } from "@/components/agent-status-drawer";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useMaxChat, type RouteInfo, type UIMessage } from "@/hooks/useMaxChat";
+import { Button } from "@/components/ui/button";
+import { useMaxChat } from "@/hooks/useMaxChat";
 import { useAuth } from "@/hooks/useAuth";
 import { LoginPage } from "@/components/auth/login-page";
 import { SetupPage, SetupRequiredPage } from "@/components/auth/setup-page";
+import { useSlashCommands } from "@/hooks/useSlashCommands";
+import { type RouteInfo, type UIMessage } from "@/lib/chat-types";
+import { getConnectionUiState } from "@/lib/connectivity";
+import { cn } from "@/lib/utils";
 
 function RouteBadge({ route }: { route: RouteInfo }) {
   const shortModel = route.model.replace(/^claude-/, "");
@@ -82,6 +91,23 @@ function AssistantMessage({
   );
 }
 
+function SystemMessage({ m }: { m: UIMessage }) {
+  return (
+    <Message className="max-w-full" from="assistant">
+      <MessageContent className="w-full rounded-xl border border-border/70 bg-muted/35 px-4 py-3 text-muted-foreground">
+        <div className="mb-2 flex items-center gap-2">
+          <Badge variant="secondary" className="text-[10px] font-normal">
+            System
+          </Badge>
+        </div>
+        <pre className="overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm">
+          {m.text}
+        </pre>
+      </MessageContent>
+    </Message>
+  );
+}
+
 export default function App() {
   const auth = useAuth();
 
@@ -120,17 +146,22 @@ export default function App() {
 }
 
 function MainApp({ auth }: { auth: ReturnType<typeof useAuth> }) {
+  const [agentStatusOpen, setAgentStatusOpen] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
-  const { messages, status, connected, sendMessage, cancel } = useMaxChat();
-
-  const handleSubmit = useCallback(
-    (message: PromptInputMessage) => {
-      const text = message.text?.trim();
-      if (!text) return;
-      void sendMessage(text);
-    },
-    [sendMessage]
-  );
+  const {
+    apiClient,
+    appendSystemMessage,
+    browserOnline,
+    messages,
+    status,
+    connected,
+    reconnecting,
+    restoringHistory,
+    sendMessage,
+    clearMessages,
+    cancel,
+  } = useMaxChat();
+  const connectionUi = getConnectionUiState({ browserOnline, connected, reconnecting });
 
   const handleCopy = useCallback((text: string) => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -177,14 +208,23 @@ function MainApp({ auth }: { auth: ReturnType<typeof useAuth> }) {
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold">Max</h1>
             <span
-              className={
-                "inline-block size-2 rounded-full " +
-                (connected ? "bg-emerald-500" : "bg-amber-500")
-              }
-              aria-label={connected ? "Connected" : "Connecting"}
+              className={cn(
+                "inline-block size-2 rounded-full",
+                connectionUi.state === "online" ? "bg-emerald-500" : "bg-amber-500"
+              )}
+              aria-label={connectionUi.ariaLabel}
             />
+            <span className="text-xs text-muted-foreground">{connectionUi.label}</span>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAgentStatusOpen((currentOpen) => !currentOpen)}
+            >
+              Agents
+            </Button>
             {auth.status?.localhost && (
               <button
                 type="button"
@@ -209,16 +249,25 @@ function MainApp({ auth }: { auth: ReturnType<typeof useAuth> }) {
         <Conversation className="flex-1 min-h-0">
           <ConversationContent className="mx-auto w-full max-w-3xl px-3 md:px-6">
             {messages.length === 0 ? (
-              <ConversationEmptyState
-                title="What's on your mind?"
-                description="Send a message to start."
-              />
+              restoringHistory ? (
+                <ConversationEmptyState
+                  title="Loading recent messages…"
+                  description="Restoring your latest chat history."
+                />
+              ) : (
+                <ConversationEmptyState
+                  title="What's on your mind?"
+                  description="Send a message to start."
+                />
+              )
             ) : (
               messages.map((m) =>
                 m.role === "user" ? (
                   <Message from="user" key={m.id}>
                     <MessageContent>{m.text}</MessageContent>
                   </Message>
+                ) : m.role === "system" ? (
+                  <SystemMessage key={m.id} m={m} />
                 ) : (
                   <AssistantMessage key={m.id} m={m} copy={handleCopy} />
                 )
@@ -230,25 +279,138 @@ function MainApp({ auth }: { auth: ReturnType<typeof useAuth> }) {
 
         <div className="shrink-0 border-t bg-background">
           <div className="mx-auto w-full max-w-3xl p-3 md:p-4">
-            <PromptInput onSubmit={handleSubmit}>
-              <PromptInputBody>
-                <PromptInputTextarea
-                  placeholder="Ask Max…"
-                  autoComplete="off"
-                  autoCorrect="on"
-                  spellCheck
-                  enterKeyHint="send"
-                />
-              </PromptInputBody>
-              <PromptInputFooter>
-                <div className="ml-auto">
-                  <PromptInputSubmit status={status} onStop={cancel} />
-                </div>
-              </PromptInputFooter>
-            </PromptInput>
+            <PromptInputProvider>
+              <ChatComposer
+                apiClient={apiClient}
+                appendSystemMessage={appendSystemMessage}
+                cancel={cancel}
+                clearMessages={clearMessages}
+                composerDisabled={connectionUi.composerDisabled}
+                composerMessage={connectionUi.composerMessage}
+                sendMessage={sendMessage}
+                status={status}
+              />
+            </PromptInputProvider>
           </div>
         </div>
+
+        <AgentStatusDrawer
+          apiClient={apiClient}
+          open={agentStatusOpen}
+          onOpenChange={setAgentStatusOpen}
+        />
       </div>
     </TooltipProvider>
   );
+}
+
+function ChatComposer({
+  apiClient,
+  appendSystemMessage,
+  cancel,
+  clearMessages,
+  composerDisabled,
+  composerMessage,
+  sendMessage,
+  status,
+}: Pick<
+  ReturnType<typeof useMaxChat>,
+  "apiClient" | "appendSystemMessage" | "cancel" | "clearMessages" | "sendMessage" | "status"
+> & {
+  composerDisabled: boolean;
+  composerMessage: string | null;
+}) {
+  const controller = usePromptInputController();
+  const [isComposing, setIsComposing] = useState(false);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const input = controller.textInput.value;
+
+  const slashCommands = useSlashCommands({
+    apiClient,
+    appendSystemMessage,
+    cancel,
+    clearMessages,
+    input,
+    isComposing,
+    setInput: controller.textInput.setInput,
+  });
+
+  const handleSubmit = useCallback(
+    async (message: PromptInputMessage) => {
+      const text = message.text?.trim();
+      if (!text) {
+        return;
+      }
+
+      const handled = await slashCommands.handleSubmit();
+      if (!handled) {
+        await sendMessage(text);
+      }
+    },
+    [sendMessage, slashCommands]
+  );
+
+  useEffect(() => {
+    if (!slashCommands.isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (composerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      slashCommands.dismiss();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [slashCommands]);
+
+  return (
+    <div
+      className={cn("relative")}
+      ref={composerRef}
+      onCompositionEndCapture={() => setIsComposing(false)}
+      onCompositionStartCapture={() => setIsComposing(true)}
+    >
+      <SlashCommandPopup
+        commands={slashCommands.commands}
+        isOpen={slashCommands.isOpen}
+        onSelect={(command) => void slashCommands.executeCommand(command)}
+        selectedCommandName={slashCommands.selectedCommandName}
+      />
+      <PromptInput onSubmit={handleSubmit}>
+        <PromptInputBody>
+          <PromptInputTextarea
+            disabled={composerDisabled}
+            placeholder={composerDisabled ? connectionPlaceholder(composerMessage) : "Ask Max…"}
+            autoComplete="off"
+            autoCorrect="on"
+            enterKeyHint="send"
+            onKeyDown={slashCommands.handleKeyDown}
+            spellCheck
+          />
+        </PromptInputBody>
+        <PromptInputFooter>
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {composerMessage ?? "Messages are ready to send."}
+            </div>
+            <PromptInputSubmit disabled={composerDisabled} status={status} onStop={cancel} />
+          </div>
+        </PromptInputFooter>
+      </PromptInput>
+    </div>
+  );
+}
+
+function connectionPlaceholder(message: string | null): string {
+  if (message?.startsWith("You're offline")) {
+    return "Offline read-only mode";
+  }
+
+  return "Connecting to Max…";
 }

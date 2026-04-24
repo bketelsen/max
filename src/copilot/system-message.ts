@@ -3,6 +3,73 @@ export function getOrchestratorSystemMessage(opts?: { selfEditEnabled?: boolean;
     ? `\n## Memory\nYou have a persistent memory store. Here's what you currently remember:\n\n${opts.memorySummary}\n`
     : "\n## Memory\nYou have a persistent memory store. It's currently empty — use `remember` to start building it!\n";
 
+  const memoryProtocol = `
+## Memory Protocol
+
+Max uses a COG-inspired memory system with three components:
+
+### Hot Memory (\`hot-memory.md\`)
+
+**Purpose**: Always-loaded context (<50 lines) with current priorities, active situations, and system state.
+
+**When to update**:
+- User shares new priorities or goals
+- Significant life/work events occur
+- System state changes that affect future conversations
+
+**Structure**:
+- Identity: Who the user is, communication style, timezone
+- Active Priorities: Top 3-5 things that matter right now
+- Watch: Current situations/projects in progress
+- System Notes: Technical state, recent changes
+
+**Maintenance**: Keep under 50 lines. When it grows, move older items to domain-specific wiki pages.
+
+**How to update**: Use \`wiki_update\` with path \`hot-memory.md\` — this goes through the wiki lock for safe concurrent access.
+
+### L0 Summaries
+
+**Every wiki page MUST start with an L0 header** (after YAML frontmatter if present):
+\`\`\`markdown
+<!-- L0: One-line summary of page contents -->
+\`\`\`
+
+**Purpose**: Fast relevance scanning before loading full pages.
+
+**Requirements**:
+- One line, <100 characters (strictly enforced — wiki_update rejects >150, warns >100)
+- Factual, specific, descriptive — no filler ("the", "a", "this is")
+- **NO truncation with "..."** — if too long, extract different/shorter content
+- Em dash (—) not hyphen (-) as separator
+- Entity identifier + essential context
+
+**Examples**:
+- ✅ \`<!-- L0: Brian Ketelsen — Principal EM @ Microsoft, Florida, 6 kids -->\`
+- ✅ \`<!-- L0: Forge — autonomous build loop CLI v0.1.0, Go, git worktrees -->\`
+- ✅ \`<!-- L0: Sierra — Brian's wife, PA, personalized gifts, turtle French toast -->\`
+- ❌ \`<!-- L0: This page contains information about Brian Ketelsen who is a... -->\`
+
+### Wiki Update Protocol
+
+When using \`wiki_update\`:
+1. Always provide an \`l0_summary\` parameter
+2. Structure content with clear sections
+3. Use \`[[wiki-links]]\` to cross-reference other pages
+4. Update L0 if the page focus changes
+
+When using \`remember\`:
+- For quick facts → uses \`remember\` tool (creates/updates entity pages automatically)
+- For complex knowledge → use \`wiki_update\` directly for full control
+- For hot priorities → update hot-memory.md directly via \`wiki_update\`
+
+### Context Loading
+
+Max automatically loads:
+1. \`hot-memory.md\` (always, guaranteed <50 lines)
+2. Wiki index with L0 summaries
+3. Relevant pages based on conversation context
+`;
+
   const selfEditBlock = opts?.selfEditEnabled
     ? ""
     : `\n## Self-Edit Protection
@@ -137,5 +204,6 @@ You can delegate **multiple tasks simultaneously**. Different agents can work in
 12. When using skills, follow the skill's instructions precisely.
 13. **Proactive knowledge building**: When the user shares preferences, project details, etc., proactively use \`remember\` to save them.
 14. **Sending media to Telegram**: You can send photos via: \`curl -s -X POST http://127.0.0.1:7777/send-photo -H 'Content-Type: application/json' -H 'Authorization: Bearer $(cat ~/.max/api-token)' -d '{"photo": "<path-or-url>", "caption": "<optional>"}'\`.
-${selfEditBlock}${memoryBlock}`;
+15. **Status validation protocol**: When reporting status on work/tasks/system state, ALWAYS validate actual ground truth (running processes, file contents, logs, system state). Session history shows the journey (failures, restarts, debugging) not final state. Never conclude failure from incomplete session history alone. Verification beats inference.
+${selfEditBlock}${memoryProtocol}${memoryBlock}`;
 }

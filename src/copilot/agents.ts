@@ -35,6 +35,25 @@ export interface AgentTaskInfo {
   originChannel?: string;
 }
 
+export interface AgentTaskSummary {
+  taskId: string;
+  description: string;
+  status: AgentTaskInfo["status"];
+  result?: string;
+  startedAt: number;
+  completedAt?: number;
+  originChannel?: string;
+}
+
+export interface AgentStatusInfo {
+  slug: string;
+  name: string;
+  description: string;
+  model: string;
+  currentTask: AgentTaskSummary | null;
+  recentTasks: AgentTaskSummary[];
+}
+
 // Frontmatter schema
 const agentFrontmatterSchema = z.object({
   name: z.string().min(1),
@@ -268,10 +287,59 @@ export function removeAgentFile(slug: string): string | null {
 
 // Per-agent task tracking (in-memory, backed by DB)
 const activeTasks = new Map<string, AgentTaskInfo>();
+const recentTasksByAgent = new Map<string, AgentTaskInfo[]>();
+const RECENT_TASK_CACHE_LIMIT = 5;
 let taskCounter = 0;
 
 function nextTaskId(): string {
   return `task-${++taskCounter}-${Date.now().toString(36)}`;
+}
+
+function toAgentTaskSummary(task: AgentTaskInfo): AgentTaskSummary {
+  return {
+    taskId: task.taskId,
+    description: task.description,
+    status: task.status,
+    result: task.result,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
+    originChannel: task.originChannel,
+  };
+}
+
+function cacheRecentTask(task: AgentTaskInfo): void {
+  const recentTasks = recentTasksByAgent.get(task.agentSlug) ?? [];
+  const nextRecentTasks = [
+    { ...task },
+    ...recentTasks.filter((entry) => entry.taskId !== task.taskId),
+  ].slice(0, RECENT_TASK_CACHE_LIMIT);
+  recentTasksByAgent.set(task.agentSlug, nextRecentTasks);
+}
+
+export function buildAgentStatusRoster(
+  registry: AgentConfig[],
+  tasks: AgentTaskInfo[],
+  recentTasksCache: ReadonlyMap<string, AgentTaskInfo[]>
+): AgentStatusInfo[] {
+  return registry.map((agent) => {
+    const currentTask = tasks
+      .filter((task) => task.agentSlug === agent.slug && task.status === "running")
+      .sort((left, right) => right.startedAt - left.startedAt)[0];
+    const recentTasks = recentTasksCache.get(agent.slug) ?? [];
+
+    return {
+      slug: agent.slug,
+      name: agent.name,
+      description: agent.description,
+      model: agent.model,
+      currentTask: currentTask ? toAgentTaskSummary(currentTask) : null,
+      recentTasks: recentTasks.map(toAgentTaskSummary),
+    };
+  });
+}
+
+export function getAgentStatusRoster(): AgentStatusInfo[] {
+  return buildAgentStatusRoster(getAgentRegistry(), getActiveTasks(), recentTasksByAgent);
 }
 
 /** Shared base prompt injected into all agent sessions. */
@@ -396,6 +464,7 @@ export async function createEphemeralAgentSession(
 /** Clean up active task tracking (for shutdown/restart). */
 export async function clearActiveTasks(): Promise<void> {
   activeTasks.clear();
+  recentTasksByAgent.clear();
 }
 
 /** Get status info for an agent (task info only — no persistent sessions). */
@@ -445,6 +514,7 @@ export function completeTask(taskId: string, result: string): void {
     task.status = "completed";
     task.result = result;
     task.completedAt = Date.now();
+    cacheRecentTask(task);
   }
 }
 
@@ -455,6 +525,7 @@ export function failTask(taskId: string, error: string): void {
     task.status = "error";
     task.result = error;
     task.completedAt = Date.now();
+    cacheRecentTask(task);
   }
 }
 

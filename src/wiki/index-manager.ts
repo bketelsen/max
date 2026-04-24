@@ -122,6 +122,31 @@ function parseFrontmatter(content: string): Record<string, string | string[]> {
   return out;
 }
 
+const L0_REGEX = /^<!--\s*L0:\s*(.+?)\s*-->/;
+
+/** Extract the L0 summary from page content (may appear before or after frontmatter). */
+export function extractL0(content: string): string | undefined {
+  // Check first line
+  const firstLine = content.split("\n")[0]?.trim();
+  if (firstLine) {
+    const m = L0_REGEX.exec(firstLine);
+    if (m) return m[1].trim();
+  }
+  // Check right after frontmatter
+  const fmMatch = content.match(/^---\s*\n[\s\S]*?\n---\s*\n?/);
+  if (fmMatch) {
+    const afterFm = content.slice(fmMatch[0].length);
+    for (const line of afterFm.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const m = L0_REGEX.exec(trimmed);
+      if (m) return m[1].trim();
+      break; // first non-empty line after frontmatter wasn't L0
+    }
+  }
+  return undefined;
+}
+
 /** Build (or refresh) an IndexEntry by reading the page from disk. */
 export function buildIndexEntryForPage(path: string, fallback?: Partial<IndexEntry>): IndexEntry | undefined {
   const content = readPage(path);
@@ -130,14 +155,15 @@ export function buildIndexEntryForPage(path: string, fallback?: Partial<IndexEnt
   const title = (typeof fm.title === "string" && fm.title) || fallback?.title || basenameTitle(path);
   const tags = Array.isArray(fm.tags) ? fm.tags : (fallback?.tags ?? []);
   const updated = (typeof fm.updated === "string" && fm.updated) || fallback?.updated;
-  // Summary heuristic: existing summary if provided, else first non-frontmatter
-  // non-heading content line trimmed to 160 chars.
-  let summary = fallback?.summary?.trim() || "";
+
+  // Prefer L0 summary over heuristic body scanning
+  const l0 = extractL0(content);
+  let summary = l0 || fallback?.summary?.trim() || "";
   if (!summary) {
-    const body = content.replace(/^---[\s\S]*?---\s*/, "");
+    const body = content.replace(/^---[\s\S]*?---\s*/, "").replace(/^<!--\s*L0:.*-->\s*\n?/, "");
     for (const raw of body.split("\n")) {
       const line = raw.trim();
-      if (!line || line.startsWith("#")) continue;
+      if (!line || line.startsWith("#") || line.startsWith("<!--")) continue;
       summary = line.replace(/^[-*]\s+/, "").replace(/_\(\d{4}-\d{2}-\d{2}\)_$/, "").trim();
       break;
     }
