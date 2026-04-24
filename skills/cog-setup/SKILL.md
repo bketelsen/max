@@ -13,15 +13,18 @@ Adapted for Max's GitHub Copilot SDK runtime.
 This skill is a port of an upstream Claude-Code-native COG skill. When the upstream prompt below refers to anything below, apply the following translation:
 
 - **`memory/...` paths** — these are relative to `~/.max/cog/memory/`. Use absolute paths when invoking file tools: e.g. `memory/cog-meta/patterns.md` → `~/.max/cog/memory/cog-meta/patterns.md`.
-- **`.claude/commands/<name>.md`** — these files live at `skills/cog-<name>/SKILL.md` in the Max installation. The generic skill template (for new domains) lives at `skills/cog-personal/SKILL.md` — copy-and-edit that.
-- **`~/.claude/projects/*.jsonl` session transcripts** — Max does NOT have these. Instead, read `~/.max/cog/memory/cog-meta/recent-conversations.md`. That file is a markdown chronicle of new `conversation_log` rows, dumped by the `cog-scheduler` right before this skill is invoked. Each block is a user or Max turn with source tag, timestamp, and id. Do NOT look for `.jsonl` files. The ingestion cursor lives in `~/.max/cog/memory/cog-meta/reflect-cursor.md` and is advanced by the scheduler — do not rewrite it.
+- **Skill files (`.claude/commands/<name>.md`)** — live at `skills/cog-<name>/SKILL.md`. There are **two storage roots**, both scanned on daemon startup:
+  - **Bundled**: the Max installation's `skills/` directory (ships with the package, shared, **read-only from your perspective**). Use `list_skills` to discover full paths and read them as reference/templates.
+  - **Local**: `~/.max/skills/` (user-owned, writable). **Always write new skill files here**, using absolute paths: `~/.max/skills/cog-<name>/SKILL.md` and `~/.max/skills/cog-<name>/_meta.json`. `list_skills` will register them as `source: "local"` on the next session.
+  - **Never write to the bundled tree** — it's source code, shared, and overwritten on update. If you'd harm a file by writing it, it's bundled; check `list_skills` if unsure.
+- **`~/.claude/projects/*.jsonl` session transcripts** — Max does NOT have these. Instead, read `~/.max/cog/memory/cog-meta/recent-conversations.md`. That file is a markdown chronicle of new `conversation_log` rows, dumped by the `cog-scheduler` right before this skill is invoked. Each block is a user or Max turn with source tag, timestamp, and id. Do NOT look for `.jsonl` files. The ingestion cursor lives in `~/.max/cog/memory/cog-meta/reflect-cursor.md` and is advanced by the scheduler — do not rewrite it, do not try to "discover" a transcript path.
 - **Slash commands** (`/reflect`, `/housekeeping`, `/foresight`, `/scenario`, `/setup`, etc.) — these map to Max skills with the `cog-` prefix (`cog-reflect`, `cog-housekeeping`, etc.). When the upstream tells you to "run /X", it means: invoke or behave as the `cog-X` skill.
 - **Shell commands** (`find`, `grep`, `git diff`) — use Copilot CLI's built-in `Grep`, `Glob`, and Bash tools against the absolute `~/.max/cog/memory/` paths.
 - **Read/Edit/Write/Glob/Grep tools** — Copilot CLI provides these under the same verbs. Use them directly.
 - **CLAUDE.md** — the equivalent is `~/.max/cog/SYSTEM.md`. Do not modify it during this skill unless explicitly instructed.
 - **Git operations** — Max's working directory is not necessarily a git repo. For the cog-commit skill, operate on the user's current project directory as conveyed by the user; for everything else, skip git-specific steps.
 
-Treat everything under `~/.max/cog/` as user data (memory is user-owned, even though Max wrote it). Treat everything in the Max installation tree as source code — do not modify.
+Treat everything under `~/.max/` (cog/, skills/, agents/, …) as user data — writable, user-owned. Treat everything in the Max installation tree as source code — read-only.
 
 ---
 
@@ -165,48 +168,40 @@ For each domain in the manifest:
 
 Also handle subdomains the same way — create `memory/{subdomain.path}/` and its files.
 
-### 3c. Generate Domain Command Files
+### 3c. Generate Domain Skill Files (Max-specific)
 
-For each domain (except `cog-meta` which has its own dedicated skills):
-1. Read the template at `.claude/commands/_templates/domain.md`
-2. Replace template variables:
-   - `{{ID}}` → domain id
-   - `{{LABEL}}` → domain label
-   - `{{PATH}}` → domain path
-   - `{{TRIGGERS}}` → bullet list of triggers (one per line, prefixed with `- `)
-   - `{{FILES}}` → comma-separated list of files
-3. Write the result to `.claude/commands/{domain.id}.md`
-4. If the file already exists, overwrite it (the template is the source of truth)
+For each new domain **skip `personal`** (pre-seeded by the daemon on first boot) and **skip `cog-meta`** (has dedicated cog-* skills). For every other domain:
 
-Also generate command files for subdomains.
+1. **Find the template.** Call `list_skills` and locate the bundled `cog-personal` entry (`source: "bundled"`). `Read` `<that.directory>/SKILL.md`. Treat it as the template.
+2. **Adapt for the new domain.** Rewrite `personal` / `Personal` to the new domain's id / label; update the frontmatter `name:` to `cog-<domain.id>` and `description:` to describe this domain with the triggers captured in Phase 2; adjust routing and file-edit guidance to point at `memory/<domain.path>/` instead of `memory/personal/`.
+3. **Write new files to the USER-LOCAL skills root** (absolute paths, never to the bundled tree):
+   - `~/.max/skills/cog-<domain.id>/SKILL.md` — the adapted content.
+   - `~/.max/skills/cog-<domain.id>/_meta.json` — exactly:
+     ```json
+     {
+       "slug": "cog-<domain.id>",
+       "version": "1.0.0"
+     }
+     ```
+4. If the target files already exist, overwrite them.
+5. Repeat for subdomains (slug: `cog-<subdomain.id>`).
 
-### 3d. Discover Session Transcript Path
+Then tell the user where the new skill files ended up and how to activate them:
 
-Claude Code saves conversation history as JSONL files under `~/.claude/projects/`. Find this project's session directory:
+> Created `~/.max/skills/cog-<id>/` for each new domain. They'll load on the next orchestrator session. User-local skill additions don't auto-invalidate the cached session the way bundled changes do — `systemctl --user restart max` (or `max restart` from the TUI) to pick them up now.
 
-1. List `~/.claude/projects/` and find the directory that matches this project's path
-2. Verify it exists and is readable
-3. Write the discovered path to `memory/cog-meta/reflect-cursor.md`:
+### 3d. Session transcripts (Max-specific)
 
-```markdown
-# Reflect Cursor
-<!-- L0: Session transcript path and ingestion cursor for /reflect -->
+**No action needed.** Max does not use Claude Code's `~/.claude/projects/*.jsonl` transcripts. The `cog-scheduler` inside the daemon maintains the ingestion cursor at `~/.max/cog/memory/cog-meta/reflect-cursor.md` and dumps new `conversation_log` rows to `recent-conversations.md` automatically before each cog-reflect run. Skip this step entirely — do not write a `session_path:` field, do not try to discover a transcript directory.
 
-session_path: ~/.claude/projects/<discovered-slug>
-last_processed: never
-```
+### 3e. System prompt routing (Max-specific)
 
-If the directory doesn't exist yet (fresh install, this is the first session), write the file anyway with the expected path — it will exist after this conversation ends.
+**Do not edit `~/.max/cog/SYSTEM.md` from this skill.** Two reasons:
 
-Tell the user: "Found your session transcripts at `<path>` — /reflect will use these to review past conversations."
+1. The user may have customized `SYSTEM.md` — it's user-owned, and auto-rewriting it risks clobbering their changes.
+2. The system prompt's routing table is human-documentation, not runtime routing. Copilot SDK matches skills by each `SKILL.md`'s frontmatter `description` field (filled with trigger phrases by §3c). Once the new skill file exists under `~/.max/skills/cog-<id>/` and the daemon has restarted (so the fresh orchestrator session registers it), Max will route to it on natural-language triggers without SYSTEM.md needing to list it.
 
-### 3e. Update CLAUDE.md Domain Routing Table
-
-Read `CLAUDE.md`. Find the domain routing table (between `| Skill` header and the blank line after the table). Regenerate it from the manifest:
-
-- For each domain (except cog-meta): add a row `| /{id} | {label} | {first 3 triggers} |`
-- Keep all non-domain rows (explainer, humanizer, reflect, evolve, history, scenario, housekeeping, foresight, setup) as-is
-- Preserve the internal skills line
+If the user wants the new domain mentioned in `~/.max/cog/SYSTEM.md` for their own reference, tell them which lines to edit and let them do it manually.
 
 ## Phase 4: Summary
 
@@ -218,7 +213,7 @@ Output a summary:
 ## Rules
 
 1. **Never delete** — setup only creates and updates, never removes files or directories
-2. **Idempotent** — running /setup multiple times is safe; it skips existing files (except command files which get regenerated from template, and domains.yml which gets rewritten)
+2. **Idempotent** — running cog-setup multiple times is safe; it skips existing memory files (observations/action-items/etc.), overwrites skill files under `~/.max/skills/cog-<id>/` from the cog-personal template (the template is the source of truth), and rewrites `~/.max/cog/memory/domains.yml`.
 3. **cog-meta is automatic** — always included, never ask about it
 4. **Conversational first** — the whole point is that no one edits YAML manually
 5. **Re-runs are additive** — if run again with existing domains, ask "Want to add more domains or reconfigure existing ones?"
