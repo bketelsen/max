@@ -9,13 +9,14 @@ import { config, persistModel } from "../config.js";
 import { SESSIONS_DIR } from "../paths.js";
 import { getCurrentSourceChannel, switchSessionModel } from "./orchestrator.js";
 import { getRouterConfig, updateRouterConfig } from "./router.js";
+import { describeCopilotError } from "./errors.js";
 import { ensureWikiStructure, readPage, writePage, deletePage, listPages, writeRawSource, listSources, getWikiDir, assertPagePath } from "../wiki/fs.js";
 import { searchIndex, addToIndex, removeFromIndex, parseIndex, buildIndexEntryForPage, type IndexEntry } from "../wiki/index-manager.js";
 import { appendLog } from "../wiki/log-manager.js";
 import { withWikiWrite } from "../wiki/lock.js";
 import {
   getAgentRegistry, getAgent, createEphemeralAgentSession, getAgentSessionStatus,
-  getActiveTasks, getTask, registerTask, completeTask, failTask,
+  getActiveTasks, getTask, registerTask, completeTask, failTask, resolveAgentModel,
   createAgentFile, removeAgentFile, loadAgents,
   type AgentConfig, type AgentTaskInfo,
 } from "./agents.js";
@@ -95,8 +96,8 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
           const allTools = createTools(deps);
           session = await createEphemeralAgentSession(agent.slug, deps.client, allTools, args.model_override);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return `Failed to create session for @${agent.slug}: ${msg}`;
+          const details = describeCopilotError(err);
+          return `Failed to create session for @${agent.slug}: ${details.userMessage}`;
         }
 
         const task = registerTask(agent.slug, args.summary, getCurrentSourceChannel());
@@ -117,18 +118,17 @@ export function createTools(deps: ToolDeps): Tool<any>[] {
             db.prepare(`UPDATE agent_tasks SET status = 'completed', result = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(output.slice(0, 10000), task.taskId);
             deps.onAgentTaskComplete(task.taskId, agent.slug, output);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            failTask(task.taskId, msg);
-            db.prepare(`UPDATE agent_tasks SET status = 'error', result = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(msg, task.taskId);
-            deps.onAgentTaskComplete(task.taskId, agent.slug, `Error: ${msg}`);
+            const details = describeCopilotError(err);
+            console.error(`[agents] Task ${task.taskId} for @${agent.slug} failed: ${details.logMessage}`);
+            failTask(task.taskId, details.userMessage);
+            db.prepare(`UPDATE agent_tasks SET status = 'error', result = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(details.userMessage, task.taskId);
+            deps.onAgentTaskComplete(task.taskId, agent.slug, `Error: ${details.userMessage}`);
           } finally {
             session.destroy().catch(() => {});
           }
         })();
 
-        const model = (args.model_override && args.model_override.length > 0)
-          ? args.model_override
-          : (agent.model === "auto" ? "claude-sonnet-4.6" : agent.model);
+        const model = resolveAgentModel(agent, args.model_override);
         return `Task delegated to @${agent.slug} (${model}). Task ID: ${task.taskId}. I'll notify you when it's done.`;
       },
     }),

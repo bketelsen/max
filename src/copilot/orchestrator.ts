@@ -5,6 +5,7 @@ import { config, DEFAULT_MODEL } from "../config.js";
 import { loadMcpConfig } from "./mcp-config.js";
 import { getSkillDirectories } from "./skills.js";
 import { resetClient } from "./client.js";
+import { describeCopilotError, isRecoverableCopilotError } from "./errors.js";
 import { logConversation, getState, setState, deleteState } from "../store/db.js";
 import { getWikiSummary } from "../wiki/context.js";
 import { SESSIONS_DIR } from "../paths.js";
@@ -322,7 +323,8 @@ async function executeOnSession(
     const finalContent = result?.data?.content || accumulated || "(No response)";
     return finalContent;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const details = describeCopilotError(err);
+    const msg = details.userMessage;
 
     // On timeout, never throw — the message was already sent to the persistent
     // session and may have been (partially) processed. Return what we have.
@@ -343,12 +345,13 @@ async function executeOnSession(
     }
 
     // If the session is broken, invalidate it so it's recreated on next attempt
-    if (/closed|destroy|disposed|invalid|expired|not found/i.test(msg)) {
-      console.log(`[max] Session appears dead, will recreate: ${msg}`);
+    if (/closed|destroy|disposed|invalid|expired|not found/i.test(details.logMessage)) {
+      console.log(`[max] Session appears dead, will recreate: ${details.logMessage}`);
       orchestratorSession = undefined;
       currentSessionModel = undefined;
       deleteState(ORCHESTRATOR_SESSION_KEY);
     }
+    console.error(`[max] Session execution failed: ${details.logMessage}`);
     throw err;
   } finally {
     unsubDelta();
@@ -416,11 +419,12 @@ async function processQueue(): Promise<void> {
 }
 
 function isRecoverableError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const details = describeCopilotError(err);
+  const msg = details.logMessage;
   // Timeouts are NOT retryable on a persistent session — the message was already
   // sent and likely processed; re-sending creates "duplicate" responses.
   if (/timeout/i.test(msg)) return false;
-  return /disconnect|connection|EPIPE|ECONNRESET|ECONNREFUSED|socket|closed|ENOENT|spawn|not found|expired|stale/i.test(msg);
+  return isRecoverableCopilotError(err);
 }
 
 export async function sendToOrchestrator(
@@ -470,23 +474,24 @@ export async function sendToOrchestrator(
         try { logConversation("assistant", finalContent, sourceLabel); } catch { /* best-effort */ }
         return;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const details = describeCopilotError(err);
+        const msg = details.userMessage;
 
         // Don't retry cancelled messages
-        if (/cancelled|abort/i.test(msg)) {
+        if (/cancelled|abort/i.test(details.logMessage)) {
           return;
         }
 
         if (isRecoverableError(err) && attempt < MAX_RETRIES) {
           const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
-          console.error(`[max] Recoverable error: ${msg}. Retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms…`);
+          console.error(`[max] Recoverable error: ${details.logMessage}. Retry ${attempt + 1}/${MAX_RETRIES} after ${delay}ms…`);
           await sleep(delay);
           // Reset client before retry in case the connection is stale
           try { await ensureClient(); } catch { /* will fail again on next attempt */ }
           continue;
         }
 
-        console.error(`[max] Error processing message: ${msg}`);
+        console.error(`[max] Error processing message: ${details.logMessage}`);
         callback(`Error: ${msg}`, true);
         return;
       }

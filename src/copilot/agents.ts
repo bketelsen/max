@@ -54,6 +54,14 @@ export interface AgentStatusInfo {
   recentTasks: AgentTaskSummary[];
 }
 
+interface BuildEphemeralSessionRequestOptions {
+  configDir: string;
+  workingDirectory: string;
+  mcpServers: ReturnType<typeof loadMcpConfig>;
+  skillDirectories: string[];
+  modelOverride?: string;
+}
+
 // Frontmatter schema
 const agentFrontmatterSchema = z.object({
   name: z.string().min(1),
@@ -179,6 +187,11 @@ export function getAgent(nameOrSlug: string): AgentConfig | undefined {
 /** Get all loaded agent configs. */
 export function getAgentRegistry(): AgentConfig[] {
   return [...agentRegistry];
+}
+
+export function resolveAgentModel(agent: AgentConfig, modelOverride?: string): string {
+  if (modelOverride && modelOverride.length > 0) return modelOverride;
+  return agent.model === "auto" ? "claude-sonnet-4.6" : agent.model;
 }
 
 /** Copy bundled agents to ~/.max/agents/, updating stale copies when the bundled version changes.
@@ -421,6 +434,31 @@ export function filterToolsForAgent(agent: AgentConfig, allTools: Tool<any>[]): 
   return allTools.filter((t) => !MANAGEMENT_TOOL_NAMES.has(t.name));
 }
 
+export function buildEphemeralSessionRequest(
+  agent: AgentConfig,
+  tools: Tool<any>[],
+  options: BuildEphemeralSessionRequestOptions
+): Parameters<CopilotClient["createSession"]>[0] {
+  return {
+    model: resolveAgentModel(agent, options.modelOverride),
+    configDir: options.configDir,
+    workingDirectory: options.workingDirectory,
+    // Delegated agent work only needs the final answer, so disable streaming to
+    // avoid provider-side streaming parser failures on background tasks.
+    streaming: false,
+    systemMessage: { content: composeAgentSystemMessage(agent) },
+    tools,
+    mcpServers: options.mcpServers,
+    skillDirectories: options.skillDirectories,
+    onPermissionRequest: approveAll,
+    infiniteSessions: {
+      enabled: true,
+      backgroundCompactionThreshold: 0.80,
+      bufferExhaustionThreshold: 0.95,
+    },
+  };
+}
+
 /** Create an ephemeral session for an agent. Always creates a fresh session — caller is responsible for destroying it. */
 export async function createEphemeralAgentSession(
   slug: string,
@@ -431,31 +469,18 @@ export async function createEphemeralAgentSession(
   const agent = getAgent(slug);
   if (!agent) throw new Error(`Agent '${slug}' not found in registry.`);
 
-  // Explicit override always wins. Otherwise use frontmatter model (with
-  // fallback to sonnet for "auto" agents that receive no override).
-  const model = (modelOverride && modelOverride.length > 0)
-    ? modelOverride
-    : (agent.model === "auto" ? "claude-sonnet-4.6" : agent.model);
+  const model = resolveAgentModel(agent, modelOverride);
   const tools = filterToolsForAgent(agent, allTools);
   const mcpServers = loadMcpConfig();
   const skillDirectories = getSkillDirectories();
 
-  const session = await client.createSession({
-    model,
+  const session = await client.createSession(buildEphemeralSessionRequest(agent, tools, {
     configDir: SESSIONS_DIR,
     workingDirectory: process.cwd(),
-    streaming: true,
-    systemMessage: { content: composeAgentSystemMessage(agent) },
-    tools,
     mcpServers,
     skillDirectories,
-    onPermissionRequest: approveAll,
-    infiniteSessions: {
-      enabled: true,
-      backgroundCompactionThreshold: 0.80,
-      bufferExhaustionThreshold: 0.95,
-    },
-  });
+    modelOverride,
+  }));
 
   console.log(`[agents] Created ephemeral session for @${agent.slug} (${model})`);
   return session;
