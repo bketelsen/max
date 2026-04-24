@@ -2,7 +2,7 @@ import { getClient, stopClient } from "./copilot/client.js";
 import { initOrchestrator, setMessageLogger, setProactiveNotify, getAgentInfo, shutdownAgents } from "./copilot/orchestrator.js";
 import { startApiServer, broadcastToSSE } from "./api/server.js";
 import { createBot, startBot, stopBot, sendProactiveMessage } from "./telegram/bot.js";
-import { getDb, closeDb, getState } from "./store/db.js";
+import { getDb, closeDb, getState, logProactiveConversation } from "./store/db.js";
 import { config } from "./config.js";
 import { spawn } from "child_process";
 import { readdirSync, statSync, rmSync } from "fs";
@@ -113,6 +113,9 @@ async function main(): Promise<void> {
       if (config.telegramEnabled) sendProactiveMessage(text);
     }
     if (!channel || channel === "tui" || channel === "web") {
+      if (!channel || channel === "web") {
+        logProactiveConversation(text, "web");
+      }
       broadcastToSSE(text);
     }
   });

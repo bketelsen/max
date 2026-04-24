@@ -189,7 +189,16 @@ export type ConversationMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  proactive?: boolean;
 };
+
+export function getProactiveConversationSource(source: string): string {
+  return `${source}:proactive`;
+}
+
+export function logProactiveConversation(content: string, source: string): void {
+  logConversation("assistant", content, getProactiveConversationSource(source));
+}
 
 export function clearConversationLog(): void {
   getDb().prepare(`DELETE FROM conversation_log`).run();
@@ -212,15 +221,20 @@ export function getRecentConversationMessages({
   const rows = (
     source
       ? db.prepare(
-          `SELECT id, role, content FROM conversation_log WHERE source = ? ORDER BY id DESC LIMIT ?`
-        ).all(source, safeLimit)
+          `SELECT id, role, content, source
+             FROM conversation_log
+            WHERE source IN (?, ?)
+            ORDER BY id DESC
+            LIMIT ?`
+        ).all(source, getProactiveConversationSource(source), safeLimit)
       : db.prepare(
-          `SELECT id, role, content FROM conversation_log ORDER BY id DESC LIMIT ?`
+          `SELECT id, role, content, source FROM conversation_log ORDER BY id DESC LIMIT ?`
         ).all(safeLimit)
   ) as Array<{
     id: number;
     role: "user" | "assistant" | "system";
     content: string;
+    source: string;
   }>;
 
   rows.reverse();
@@ -229,6 +243,7 @@ export function getRecentConversationMessages({
     id: String(row.id),
     role: row.role,
     text: row.content,
+    ...(row.source.endsWith(":proactive") ? { proactive: true } : {}),
   }));
 }
 

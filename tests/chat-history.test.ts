@@ -26,3 +26,26 @@ test("getRecentConversationMessages returns the latest 50 web messages in chrono
   assert.equal(messages.at(-1)?.role, "user");
   assert.equal(messages.at(-1)?.text, "web message 55");
 });
+
+test("getRecentConversationMessages restores proactive messages delivered to web clients", () => {
+  clearConversationLog();
+
+  logConversation("user", "web question", "web");
+  logConversation("assistant", "web answer", "web");
+  logConversation("assistant", "background completion", "web:proactive");
+
+  const messages = getRecentConversationMessages({ limit: 50, source: "web" });
+
+  assert.deepEqual(
+    messages.map((message) => ({
+      role: message.role,
+      text: message.text,
+      proactive: "proactive" in message ? (message as { proactive?: boolean }).proactive : undefined,
+    })),
+    [
+      { role: "user", text: "web question", proactive: undefined },
+      { role: "assistant", text: "web answer", proactive: undefined },
+      { role: "assistant", text: "background completion", proactive: true },
+    ]
+  );
+});
